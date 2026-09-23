@@ -1,0 +1,13 @@
+# Personal Tasks data file
+# Format (pipe-delimited): id|title|due|done|progress|total|notes
+# due = YYYY-MM-DD or YYYY-MM-DDTHH:mm (empty if none)
+# done = 0 or 1
+# Use \| for a literal | in title/notes; use \n for a newline in notes
+#
+# Edit this file on a computer, then Import it from the app menu on your phone.
+
+t1|Zikr Mama g: ayat e karima 125k every year: 2026|2026-09-20T14:00|0|0|0|
+t2|Zikr: Surah Yaseen: every day: 2026|2026-09-20|0|0|8|Daily recitation
+t3|Zikr: 1000 times: Surah Ikhlas: every day|2026-09-21|0|0|10|
+t4|Buy groceries|2026-09-25T18:30|0|0|0|Milk, eggs, bread
+t5|Call dentist|2026-09-28|0|0|0|

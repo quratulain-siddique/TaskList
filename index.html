@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#f1a820" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Tasks" />
+  <meta name="description" content="Personal task list — free, offline, file-backed" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <title>Tasks</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-bar">
+    <button type="button" class="icon-btn" id="btn-menu" aria-label="Menu">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/></svg>
+    </button>
+    <h1 class="app-title">Tasks</h1>
+    <div class="app-actions">
+      <button type="button" class="icon-btn" id="btn-search" aria-label="Search">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      </button>
+      <button type="button" class="icon-btn" id="btn-sort" aria-label="Sort">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z"/></svg>
+      </button>
+      <button type="button" class="icon-btn" id="btn-check-all" aria-label="Mark all complete">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M18 7l-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/></svg>
+      </button>
+      <button type="button" class="icon-btn" id="btn-more" aria-label="More">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="search-bar" id="search-bar" hidden>
+    <input type="search" id="search-input" placeholder="Search tasks…" autocomplete="off" />
+    <button type="button" class="text-btn" id="btn-search-close">Cancel</button>
+  </div>
+
+  <main class="task-list" id="task-list" aria-live="polite"></main>
+
+  <p class="empty-state" id="empty-state" hidden>No tasks yet. Tap + to add one.</p>
+
+  <button type="button" class="fab" id="btn-add" aria-label="Add task">
+    <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+  </button>
+
+  <!-- Side drawer -->
+  <div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-header">
+      <span class="drawer-brand">My Tasks</span>
+      <p class="drawer-sub">Local file-backed list</p>
+    </div>
+    <nav class="drawer-nav">
+      <button type="button" class="drawer-item active" data-filter="all">All tasks</button>
+      <button type="button" class="drawer-item" data-filter="active">Active</button>
+      <button type="button" class="drawer-item" data-filter="done">Completed</button>
+    </nav>
+    <div class="drawer-footer">
+      <button type="button" class="drawer-item" id="btn-import">Import from file</button>
+      <button type="button" class="drawer-item" id="btn-export">Export to file</button>
+      <input type="file" id="file-input" accept=".txt,.csv,.json,text/plain,application/json" hidden />
+    </div>
+  </aside>
+
+  <!-- More menu -->
+  <div class="menu-backdrop" id="menu-backdrop" hidden></div>
+  <div class="overflow-menu" id="overflow-menu" hidden role="menu">
+    <button type="button" role="menuitem" id="menu-import">Import tasks file…</button>
+    <button type="button" role="menuitem" id="menu-export">Export tasks file…</button>
+    <button type="button" role="menuitem" id="menu-clear-done">Clear completed</button>
+  </div>
+
+  <!-- Add / Edit dialog -->
+  <dialog class="sheet" id="task-dialog">
+    <form method="dialog" id="task-form">
+      <h2 id="dialog-title">New task</h2>
+      <label>
+        Title
+        <input type="text" id="field-title" required maxlength="300" placeholder="What needs doing?" />
+      </label>
+      <div class="row-2">
+        <label>
+          Due date
+          <input type="date" id="field-date" />
+        </label>
+        <label>
+          Time
+          <input type="time" id="field-time" />
+        </label>
+      </div>
+      <div class="row-2">
+        <label>
+          Progress
+          <input type="number" id="field-progress" min="0" value="0" />
+        </label>
+        <label>
+          Total (reps)
+          <input type="number" id="field-total" min="0" value="0" />
+        </label>
+      </div>
+      <label>
+        Notes
+        <textarea id="field-notes" rows="3" maxlength="2000" placeholder="Optional details…"></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn-ghost" id="btn-dialog-cancel">Cancel</button>
+        <button type="submit" class="btn-primary" id="btn-dialog-save">Save</button>
+      </div>
+      <input type="hidden" id="field-id" />
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
