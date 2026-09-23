@@ -2,6 +2,8 @@
 
 Free, installable mobile task list. Looks like a native app, works offline, and backs up to a simple text file you can edit anywhere.
 
+A fresh install starts with an **empty** list. Tasks live in that device’s browser storage (not shared). `data/tasks.txt` in the repo is only a blank template / backup format—populate it yourself or via Export, then Import on another device.
+
 ## Features
 
 - Task title, due date/time, notes, and optional progress (e.g. `0/10`)
@@ -34,7 +36,9 @@ Open the printed URL on your phone (same Wi‑Fi). For a lasting install, use Op
 
 ## Data file format
 
-File: `data/tasks.txt` (also what Export downloads)
+File: `data/tasks.txt` — blank template in the repo; Export downloads the same format with your tasks.
+
+Example once populated:
 
 ```
 # id|title|due|done|progress|total|notes

@@ -39,36 +39,7 @@ function saveTasks() {
 }
 
 function seedIfEmpty() {
-  state.tasks = [
-    {
-      id: uid(),
-      title: "Zikr Mama g: ayat e karima 125k every year: 2026",
-      due: daysAgo(4) + "T14:00",
-      done: false,
-      progress: 0,
-      total: 0,
-      notes: "",
-    },
-    {
-      id: uid(),
-      title: "Zikr: Surah Yaseen: every day: 2026",
-      due: daysAgo(4),
-      done: false,
-      progress: 0,
-      total: 8,
-      notes: "Daily recitation — mark progress as you go.",
-    },
-    {
-      id: uid(),
-      title: "Zikr: 1000 times: Surah Ikhlas: every day",
-      due: daysAgo(3),
-      done: false,
-      progress: 0,
-      total: 10,
-      notes: "",
-    },
-  ];
-  saveTasks();
+  state.tasks = [];
 }
 
 function normalizeTask(t) {
@@ -85,15 +56,6 @@ function normalizeTask(t) {
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-}
-
-function daysAgo(n) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
 
 // —— File format ——
