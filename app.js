@@ -82,6 +82,38 @@ function stopCloudSync() {
   }
 }
 
+function writeLocalReplica(tasks) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+}
+
+const REPLICA_CHECK_KEY = "my-tasks-replica-day";
+
+function markReplicaCheckedToday() {
+  localStorage.setItem(REPLICA_CHECK_KEY, formatLocalDate(new Date()));
+}
+
+/** While signed in, keep localStorage as a copy of the account list (daily + on changes). */
+function maybeDailyReplicaCheck() {
+  if (!state.user) return;
+  const today = formatLocalDate(new Date());
+  if (localStorage.getItem(REPLICA_CHECK_KEY) === today) return;
+  writeLocalReplica(state.tasks);
+  markReplicaCheckedToday();
+}
+
+/**
+ * Account tasks win on the same id; local-only tasks are appended.
+ */
+function mergeTaskLists(cloudTasks, localTasks) {
+  const byId = new Map();
+  for (const t of cloudTasks) byId.set(t.id, normalizeTask(t));
+  for (const t of localTasks) {
+    const n = normalizeTask(t);
+    if (!byId.has(n.id)) byId.set(n.id, n);
+  }
+  return Array.from(byId.values());
+}
+
 async function saveTasksCloud() {
   if (!state.user || !db || applyingRemote) return;
   try {
@@ -101,13 +133,14 @@ async function saveTasksCloud() {
 }
 
 /**
- * Persist current tasks: cloud when signed in, else localStorage.
+ * Persist: always write localStorage. When signed in, also write Firestore.
+ * Local stays an account replica so logout still has the synced list.
  */
 function saveTasks() {
+  writeLocalReplica(state.tasks);
   if (state.user) {
+    markReplicaCheckedToday();
     saveTasksCloud();
-  } else {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.tasks));
   }
 }
 
@@ -141,40 +174,30 @@ async function startCloudSync(user) {
   const ref = userDocRef(user.uid);
   const snap = await getDoc(ref);
   const localGuest = readLocalTasksSnapshot();
+  const cloudTasks =
+    snap.exists() && Array.isArray(snap.data()?.tasks)
+      ? snap.data().tasks.map(normalizeTask)
+      : [];
 
-  if (!snap.exists()) {
-    const initial = localGuest.length ? localGuest : [];
-    applyingRemote = true;
-    state.tasks = initial;
-    applyingRemote = false;
-    await setDoc(ref, {
-      tasks: initial,
+  // Merge guest/local-only tasks into the account, then use that as the source of truth
+  const merged = mergeTaskLists(cloudTasks, localGuest);
+
+  applyingRemote = true;
+  state.tasks = merged;
+  writeLocalReplica(merged);
+  markReplicaCheckedToday();
+  applyingRemote = false;
+  render();
+
+  await setDoc(
+    ref,
+    {
+      tasks: merged,
       updatedAt: new Date().toISOString(),
       email: user.email || "",
-    });
-  } else {
-    const cloudTasks = Array.isArray(snap.data()?.tasks) ? snap.data().tasks.map(normalizeTask) : [];
-    if (cloudTasks.length === 0 && localGuest.length > 0) {
-      applyingRemote = true;
-      state.tasks = localGuest;
-      applyingRemote = false;
-      await setDoc(
-        ref,
-        {
-          tasks: localGuest,
-          updatedAt: new Date().toISOString(),
-          email: user.email || "",
-        },
-        { merge: true }
-      );
-    } else {
-      applyingRemote = true;
-      state.tasks = cloudTasks;
-      applyingRemote = false;
-    }
-  }
-
-  render();
+    },
+    { merge: true }
+  );
 
   unsubTasks = onSnapshot(
     ref,
@@ -185,6 +208,8 @@ async function startCloudSync(user) {
         : [];
       applyingRemote = true;
       state.tasks = remote;
+      writeLocalReplica(remote);
+      markReplicaCheckedToday();
       applyingRemote = false;
       render();
     },
@@ -204,6 +229,7 @@ function handleAuthUser(user) {
       alert("Signed in, but could not load cloud tasks.");
     });
   } else {
+    // Local already holds last account replica (or prior guest list)
     state.user = null;
     updateAccountUi();
     loadLocalTasks();
@@ -337,7 +363,7 @@ function sectionFor(task) {
   return "No date";
 }
 
-const SECTION_ORDER = ["Overdue", "Today", "Upcoming", "No date", "Completed"];
+const SECTION_ORDER = ["No date", "Overdue", "Today", "Upcoming", "Completed"];
 
 // —— Filtering / sorting ——
 
@@ -368,7 +394,6 @@ const ICONS = {
   checked:
     '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>',
   cal: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/></svg>',
-  prog: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>',
   chev: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>',
 };
 
@@ -411,13 +436,11 @@ function renderCard(t, forceOverdueStyle) {
   if (dueLabel) {
     meta += `<span class="meta-item${overdue && !t.done ? " overdue" : ""}">${ICONS.cal}${dueLabel}</span>`;
   }
-  if (t.total > 0) {
-    meta += `<span class="meta-item">${ICONS.prog}${t.progress}/${t.total}</span>`;
-  }
 
   return `
     <div class="task-card-wrap" data-id="${t.id}">
-      <div class="task-swipe-label">Set to now</div>
+      <div class="task-swipe-label swipe-now">Set to now</div>
+      <div class="task-swipe-label swipe-delete">Delete</div>
       <article class="task-card" data-id="${t.id}">
         <div class="task-row${t.done ? " done" : ""}">
           <button type="button" class="check${t.done ? " checked" : ""}" data-action="toggle" aria-label="Mark complete">
@@ -443,6 +466,13 @@ function escapeHtml(s) {
 
 // —— CRUD ——
 
+function autosizeTitleField() {
+  const el = document.getElementById("field-title");
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${Math.max(el.scrollHeight, 44)}px`;
+}
+
 function openDialog(task) {
   const dlg = document.getElementById("task-dialog");
   const deleteBtn = document.getElementById("btn-dialog-delete");
@@ -450,8 +480,6 @@ function openDialog(task) {
   document.getElementById("field-id").value = task?.id || "";
   document.getElementById("field-title").value = task?.title || "";
   document.getElementById("field-notes").value = task?.notes || "";
-  document.getElementById("field-progress").value = String(task?.progress ?? 0);
-  document.getElementById("field-total").value = String(task?.total ?? 0);
   deleteBtn.hidden = !task;
 
   let date = "";
@@ -469,6 +497,7 @@ function openDialog(task) {
   document.getElementById("field-time").value = time;
   state.editingId = task?.id || null;
   dlg.showModal();
+  autosizeTitleField();
   document.getElementById("field-title").focus();
 }
 
@@ -483,13 +512,14 @@ function saveFromForm(e) {
   if (date && time) due = `${date}T${time}`;
   else if (date) due = date;
 
+  const existing = state.tasks.find((t) => t.id === id);
   const task = normalizeTask({
     id,
     title,
     due,
-    done: state.tasks.find((t) => t.id === id)?.done || false,
-    progress: document.getElementById("field-progress").value,
-    total: document.getElementById("field-total").value,
+    done: existing?.done || false,
+    progress: existing?.progress ?? 0,
+    total: existing?.total ?? 0,
     notes: document.getElementById("field-notes").value,
   });
 
@@ -733,7 +763,7 @@ function bindEvents() {
   });
 
   document.getElementById("btn-add").addEventListener("click", () => openDialog(null));
-  document.getElementById("btn-dialog-cancel").addEventListener("click", () => {
+  document.getElementById("btn-dialog-close").addEventListener("click", () => {
     document.getElementById("task-dialog").close();
   });
   document.getElementById("btn-dialog-delete").addEventListener("click", () => {
@@ -742,6 +772,7 @@ function bindEvents() {
     document.getElementById("task-dialog").close();
     deleteTask(id);
   });
+  document.getElementById("field-title").addEventListener("input", autosizeTitleField);
   document.getElementById("task-form").addEventListener("submit", saveFromForm);
 
   const listEl = document.getElementById("task-list");
@@ -764,16 +795,20 @@ function bindEvents() {
   bindSwipe(listEl);
 }
 
-/** Swipe right on a task card → set due to now (local date + time). */
+/** Swipe right → set due to now. Swipe left → delete (with confirm). */
 function bindSwipe(listEl) {
   const THRESHOLD = 72;
   /** @type {{ wrap: HTMLElement, card: HTMLElement, id: string, x0: number, y0: number, dx: number, active: boolean } | null} */
   let gesture = null;
 
+  function clearSwipeClasses(wrap) {
+    wrap?.classList.remove("swiping-right", "swiping-left");
+  }
+
   function resetCard(card, wrap) {
     card.style.transition = "transform 0.2s ease";
     card.style.transform = "";
-    wrap?.classList.remove("swiping");
+    clearSwipeClasses(wrap);
   }
 
   listEl.addEventListener(
@@ -813,14 +848,15 @@ function bindSwipe(listEl) {
           gesture = null;
           return;
         }
-        if (dx > 10) gesture.active = true;
+        if (Math.abs(dx) > 10) gesture.active = true;
         else return;
       }
-      gesture.dx = Math.max(0, dx);
-      const pull = Math.min(gesture.dx, 120);
+      gesture.dx = dx;
+      const pull = Math.max(-120, Math.min(120, dx));
       gesture.card.style.transform = `translateX(${pull}px)`;
-      if (pull > 24) gesture.wrap.classList.add("swiping");
-      else gesture.wrap.classList.remove("swiping");
+      clearSwipeClasses(gesture.wrap);
+      if (pull > 24) gesture.wrap.classList.add("swiping-right");
+      else if (pull < -24) gesture.wrap.classList.add("swiping-left");
     },
     { passive: true }
   );
@@ -834,6 +870,11 @@ function bindSwipe(listEl) {
       setTaskDueToNow(id);
       return;
     }
+    if (active && dx <= -THRESHOLD) {
+      resetCard(card, wrap);
+      deleteTask(id);
+      return;
+    }
     resetCard(card, wrap);
   }
 
@@ -845,13 +886,18 @@ function bindSwipe(listEl) {
 
 bindEvents();
 updateAccountUi();
-loadLocalTasks();
-render();
 
 if (initFirebase() && auth) {
+  // Wait for auth before showing tasks so we don't flash old guest list then account list
   onAuthStateChanged(auth, (user) => {
     handleAuthUser(user);
   });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") maybeDailyReplicaCheck();
+  });
+} else {
+  loadLocalTasks();
+  render();
 }
 
 if ("serviceWorker" in navigator) {

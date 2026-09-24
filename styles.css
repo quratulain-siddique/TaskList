@@ -139,12 +139,11 @@ body {
   margin-bottom: 8px;
   border-radius: 10px;
   overflow: hidden;
-  background: #4caf50;
+  background: #9e9e9e;
 }
 
 .task-swipe-label {
   position: absolute;
-  left: 16px;
   top: 0;
   bottom: 0;
   display: flex;
@@ -157,15 +156,37 @@ body {
   transition: opacity 0.15s ease;
 }
 
-.task-card-wrap.swiping .task-swipe-label {
+.task-swipe-label.swipe-now {
+  left: 16px;
+}
+
+.task-swipe-label.swipe-delete {
+  right: 16px;
+}
+
+.task-card-wrap.swiping-right {
+  background: #4caf50;
+}
+
+.task-card-wrap.swiping-right .task-swipe-label.swipe-now {
+  opacity: 1;
+}
+
+.task-card-wrap.swiping-left {
+  background: var(--danger);
+}
+
+.task-card-wrap.swiping-left .task-swipe-label.swipe-delete {
   opacity: 1;
 }
 
 .task-card {
   position: relative;
   background: var(--card);
+  border: 1px solid #ddd;
   border-radius: 10px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  box-shadow: none;
+  overflow: hidden;
   transition: transform 0.2s ease;
   touch-action: pan-y;
   will-change: transform;
@@ -173,10 +194,11 @@ body {
 
 .task-row {
   display: flex;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 14px 10px 14px 8px;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
   cursor: pointer;
+  min-height: 48px;
 }
 
 .task-row.done .task-title {
@@ -186,8 +208,10 @@ body {
 
 .check {
   flex-shrink: 0;
+  align-self: center;
   width: 40px;
   height: 40px;
+  margin: 4px 0 4px 4px;
   border: 0;
   background: transparent;
   color: var(--muted);
@@ -195,7 +219,6 @@ body {
   place-items: center;
   cursor: pointer;
   border-radius: 50%;
-  margin-top: -2px;
 }
 
 .check:active {
@@ -203,8 +226,8 @@ body {
 }
 
 .check svg {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
 }
 
 .check.checked {
@@ -214,15 +237,20 @@ body {
 .task-body {
   flex: 1;
   min-width: 0;
-  padding-top: 4px;
+  padding: 10px 10px 10px 4px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .task-title {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   font-size: 0.98rem;
   font-weight: 600;
   line-height: 1.35;
   word-wrap: break-word;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .task-meta {
@@ -252,21 +280,28 @@ body {
 
 .defer-btn {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  align-self: stretch;
+  width: 52px;
+  min-height: 100%;
   border: 0;
-  background: transparent;
+  border-left: 1px solid #eee;
+  border-radius: 0;
+  background: #fafafa;
   color: var(--muted);
-  border-radius: 50%;
   display: grid;
   place-items: center;
   cursor: pointer;
-  margin-top: 2px;
+  padding: 0;
+}
+
+.defer-btn svg {
+  width: 28px;
+  height: 28px;
 }
 
 .defer-btn:active {
-  background: rgba(0, 0, 0, 0.06);
-  color: var(--yellow-dark);
+  background: #f0f0f0;
+  color: var(--muted);
 }
 
 .empty-state {
@@ -515,8 +550,39 @@ iframe[src*="netlify"],
 }
 
 .sheet h2 {
-  margin: 0 0 4px;
+  margin: 0;
   font-size: 1.15rem;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.dialog-header h2 {
+  flex: 1;
+  min-width: 0;
+}
+
+.dialog-close {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  margin: -8px -8px -8px 0;
+}
+
+.dialog-close:active {
+  background: rgba(0, 0, 0, 0.06);
 }
 
 .sheet label {
@@ -538,6 +604,18 @@ iframe[src*="netlify"],
   padding: 10px 12px;
   font-size: 1rem;
   background: #fff;
+}
+
+.sheet textarea#field-title {
+  resize: none;
+  min-height: 2.75em;
+  max-height: 40vh;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+  field-sizing: content;
 }
 
 .sheet input:focus,

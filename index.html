@@ -71,10 +71,15 @@
   <!-- Add / Edit dialog -->
   <dialog class="sheet" id="task-dialog">
     <form id="task-form">
-      <h2 id="dialog-title">New task</h2>
+      <div class="dialog-header">
+        <h2 id="dialog-title">New task</h2>
+        <button type="button" class="dialog-close" id="btn-dialog-close" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </div>
       <label>
         Title
-        <input type="text" id="field-title" required maxlength="300" placeholder="What needs doing?" />
+        <textarea id="field-title" required maxlength="300" rows="1" placeholder="What needs doing?"></textarea>
       </label>
       <div class="row-2">
         <label>
@@ -86,16 +91,6 @@
           <input type="time" id="field-time" />
         </label>
       </div>
-      <div class="row-2">
-        <label>
-          Progress
-          <input type="number" id="field-progress" min="0" value="0" />
-        </label>
-        <label>
-          Total (reps)
-          <input type="number" id="field-total" min="0" value="0" />
-        </label>
-      </div>
       <label>
         Notes
         <textarea id="field-notes" rows="3" maxlength="2000" placeholder="Optional details…"></textarea>
@@ -103,7 +98,6 @@
       <div class="dialog-actions">
         <button type="button" class="btn-ghost danger-text" id="btn-dialog-delete" hidden>Delete</button>
         <span class="dialog-actions-spacer"></span>
-        <button type="button" class="btn-ghost" id="btn-dialog-cancel">Cancel</button>
         <button type="submit" class="btn-primary" id="btn-dialog-save">Save</button>
       </div>
       <input type="hidden" id="field-id" />
