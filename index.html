@@ -9,8 +9,9 @@
   <meta name="apple-mobile-web-app-title" content="Tasks" />
   <meta name="description" content="Personal task list — free, offline, file-backed" />
   <link rel="manifest" href="manifest.json" />
-  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="icon" href="icons/favicon-32.png" type="image/png" sizes="32x32" />
+  <link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" sizes="180x180" />
   <title>Tasks</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -40,12 +41,16 @@
 
   <div class="task-area" id="task-area">
     <main class="task-list" id="task-list" aria-live="polite"></main>
-    <p class="empty-state" id="empty-state" hidden>No tasks yet. Tap + in the top bar to add one.</p>
+    <p class="empty-state" id="empty-state" hidden>No tasks yet. Tap + to add one.</p>
     <div class="loading-overlay" id="loading-overlay" hidden>
       <div class="loading-spinner" aria-hidden="true"></div>
       <p class="loading-text">Loading tasks…</p>
     </div>
   </div>
+
+  <button type="button" class="fab" id="btn-add-fab" aria-label="Add task">
+    <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+  </button>
 
   <!-- Side drawer -->
   <div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
@@ -96,10 +101,12 @@
           <input type="time" id="field-time" />
         </label>
       </div>
-      <label>
-        Notes
-        <textarea id="field-notes" rows="3" maxlength="2000" placeholder="Optional details…"></textarea>
-      </label>
+      <div class="subtasks-block">
+        <span class="subtasks-label">Sub tasks</span>
+        <ul class="subtask-list" id="subtask-list"></ul>
+        <p class="subtasks-empty" id="subtasks-empty">No sub tasks yet.</p>
+        <button type="button" class="btn-add-subtask" id="btn-add-subtask">+ Add</button>
+      </div>
       <div class="dialog-actions">
         <button type="button" class="btn-danger" id="btn-dialog-delete" hidden>Delete</button>
         <button type="submit" class="btn-primary" id="btn-dialog-save">Save</button>

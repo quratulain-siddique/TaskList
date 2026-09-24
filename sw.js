@@ -1,4 +1,4 @@
-const CACHE = "tasks-v9";
+const CACHE = "tasks-v12";
 const ASSETS = [
   "./",
   "./index.html",
@@ -6,25 +6,35 @@ const ASSETS = [
   "./app.js",
   "./firebase-config.js",
   "./manifest.json",
-  "./icons/icon.svg",
+  "./icons/favicon-32.png",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png",
+  "./icons/apple-touch-icon.png",
 ];
 
-function isAppShell(url) {
-  const u = new URL(url);
-  if (u.origin !== self.location.origin) return false;
-  // Never treat Firebase / API as shell
-  return true;
-}
-
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    caches
+      .open(CACHE)
+      .then((cache) =>
+        Promise.all(
+          ASSETS.map((url) =>
+            cache.add(url).catch((err) => {
+              console.warn("SW cache skip:", url, err);
+            })
+          )
+        )
+      )
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
@@ -33,7 +43,6 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return;
 
   const url = new URL(req.url);
-  // Bypass cache for Firebase / Google CDNs and APIs
   if (
     url.hostname.includes("googleapis.com") ||
     url.hostname.includes("gstatic.com") ||
@@ -43,13 +52,13 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (!isAppShell(req.url)) return;
+  if (url.origin !== self.location.origin) return;
 
   event.respondWith(
     caches.match(req).then((cached) => {
       const fetched = fetch(req)
         .then((res) => {
-          if (res.ok && url.origin === self.location.origin) {
+          if (res.ok) {
             const copy = res.clone();
             caches.open(CACHE).then((c) => c.put(req, copy));
           }

@@ -38,7 +38,7 @@ html, body {
 
 body {
   padding-top: calc(var(--bar-h) + var(--safe-top));
-  padding-bottom: calc(24px + var(--safe-bottom));
+  padding-bottom: calc(88px + var(--safe-bottom));
 }
 
 /* —— App bar —— */
@@ -275,6 +275,22 @@ body {
   color: var(--muted);
 }
 
+.meta-subcount {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.meta-subcount svg {
+  width: 16px;
+  height: 16px;
+  opacity: 0.85;
+}
+
 .meta-item {
   display: inline-flex;
   align-items: center;
@@ -368,7 +384,28 @@ body {
   }
 }
 
-/* —— FAB removed; add lives in app bar —— */
+/* —— FAB —— */
+.fab {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(20px, calc(16px + var(--safe-bottom)));
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--yellow);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  z-index: 30;
+}
+
+.fab:active {
+  background: var(--yellow-dark);
+  transform: scale(0.96);
+}
 
 /* Hide Netlify’s floating “Powered by” / deploy badge if injected */
 iframe[title*="Netlify"],
@@ -591,15 +628,24 @@ iframe[src*="netlify"],
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.2);
 }
 
-/* Task dialog: centered box on all screen sizes */
+/* Task dialog: box aligned from top with 10% margin */
 #task-dialog.sheet {
-  margin: auto;
+  margin: 10% auto auto;
   width: 80%;
   max-width: 420px;
-  max-height: min(85vh, 90%);
+  max-height: min(80vh, 85%);
   height: fit-content;
   border-radius: 16px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+  overflow-x: hidden;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge legacy */
+}
+
+#task-dialog.sheet::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .sheet::backdrop {
@@ -615,8 +661,26 @@ iframe[src*="netlify"],
 
 #task-dialog.sheet form {
   padding: 18px 16px;
+  overflow-x: hidden;
   overflow-y: auto;
-  max-height: min(85vh, 90%);
+  max-height: min(80vh, 85%);
+  min-width: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+#task-dialog.sheet form::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+#task-dialog .row-2,
+#task-dialog label,
+#task-dialog input,
+#task-dialog textarea {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .sheet h2 {
@@ -686,6 +750,14 @@ iframe[src*="netlify"],
   overflow-wrap: anywhere;
   overflow-y: auto;
   field-sizing: content;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.sheet textarea#field-title::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .sheet input:focus,
@@ -696,8 +768,154 @@ iframe[src*="netlify"],
 
 .row-2 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 12px;
+}
+
+@media (min-width: 480px) {
+  .row-2 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.subtasks-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.subtasks-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.btn-add-subtask {
+  align-self: flex-end;
+  border: 0;
+  background: transparent;
+  color: var(--yellow-dark);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 2px;
+}
+
+.btn-add-subtask:active {
+  opacity: 0.7;
+}
+
+.subtask-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 36vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.subtask-list::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.subtasks-empty {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.subtasks-empty[hidden] {
+  display: none !important;
+}
+
+.subtask-item {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+  min-width: 0;
+  touch-action: none;
+}
+
+.subtask-item.dragging {
+  opacity: 0.85;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  background: #fffef8;
+}
+
+.subtask-bullet {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.subtask-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--muted);
+  box-sizing: border-box;
+  display: block;
+}
+
+.subtask-bullet.done .subtask-dot {
+  border-color: var(--yellow-dark);
+  background: var(--yellow);
+  box-shadow: inset 0 0 0 3px #fff;
+}
+
+.subtask-title {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: 1rem;
+  padding: 10px 8px 10px 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.subtask-bullet.done + .subtask-title {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.subtask-drag {
+  flex-shrink: 0;
+  align-self: stretch;
+  width: 44px;
+  border: 0;
+  border-left: 1px solid #eee;
+  background: #fafafa;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  cursor: grab;
+  padding: 0;
+  touch-action: none;
+}
+
+.subtask-drag:active {
+  cursor: grabbing;
+  background: #f0f0f0;
 }
 
 .dialog-actions {
@@ -771,6 +989,7 @@ iframe[src*="netlify"],
   }
 
   #task-dialog.sheet {
+    margin: 10% auto auto;
     width: 80%;
     max-width: 420px;
   }

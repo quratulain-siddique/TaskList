@@ -22,13 +22,16 @@ import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
 
 const STORAGE_KEY = "my-tasks-v1";
 
-/** @typedef {{ id: string, title: string, due: string|null, done: boolean, progress: number, total: number, notes: string }} Task */
+/** @typedef {{ id: string, title: string, done: boolean }} Subtask */
+/** @typedef {{ id: string, title: string, due: string|null, done: boolean, progress: number, total: number, notes: string, subtasks: Subtask[] }} Task */
 
 const state = {
   tasks: /** @type {Task[]} */ ([]),
   filter: "all", // all | active | done
   query: "",
   editingId: null,
+  /** @type {Subtask[]} */
+  dialogSubtasks: [],
   /** @type {{ uid: string, email: string } | null} */
   user: null,
 };
@@ -258,7 +261,18 @@ function handleAuthUser(user) {
 
 // —— Normalize / ids ——
 
+function normalizeSubtask(s) {
+  return {
+    id: String(s?.id || uid()),
+    title: String(s?.title || "").trim(),
+    done: Boolean(s?.done),
+  };
+}
+
 function normalizeTask(t) {
+  const subtasks = Array.isArray(t.subtasks)
+    ? t.subtasks.map(normalizeSubtask)
+    : [];
   return {
     id: String(t.id || uid()),
     title: String(t.title || "").trim() || "Untitled",
@@ -267,6 +281,7 @@ function normalizeTask(t) {
     progress: Math.max(0, Number(t.progress) || 0),
     total: Math.max(0, Number(t.total) || 0),
     notes: String(t.notes || ""),
+    subtasks,
   };
 }
 
@@ -393,7 +408,10 @@ function visibleTasks() {
   if (state.query) {
     const q = state.query.toLowerCase();
     list = list.filter(
-      (t) => t.title.toLowerCase().includes(q) || t.notes.toLowerCase().includes(q)
+      (t) =>
+        t.title.toLowerCase().includes(q) ||
+        t.notes.toLowerCase().includes(q) ||
+        (t.subtasks || []).some((s) => s.title.toLowerCase().includes(q))
     );
   }
   list.sort((a, b) => {
@@ -413,6 +431,8 @@ const ICONS = {
   checked:
     '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>',
   cal: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/></svg>',
+  subdone:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="12" r="9.2"/><path d="M6.5 12.4 10.2 16 21 5.5"/></svg>',
   chev: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>',
 };
 
@@ -455,6 +475,11 @@ function renderCard(t, forceOverdueStyle) {
   if (dueLabel) {
     meta += `<span class="meta-item${overdue && !t.done ? " overdue" : ""}">${ICONS.cal}${dueLabel}</span>`;
   }
+  let subCount = "";
+  if (t.subtasks?.length) {
+    const doneN = t.subtasks.filter((s) => s.done).length;
+    subCount = `<span class="meta-subcount">${ICONS.subdone}${doneN}/${t.subtasks.length}</span>`;
+  }
 
   return `
     <div class="task-card-wrap" data-id="${t.id}">
@@ -467,7 +492,11 @@ function renderCard(t, forceOverdueStyle) {
           </button>
           <div class="task-body" data-action="edit">
             <p class="task-title">${escapeHtml(t.title)}</p>
-            ${meta ? `<div class="task-meta">${meta}</div>` : ""}
+            ${
+              meta || subCount
+                ? `<div class="task-meta">${meta}${subCount}</div>`
+                : ""
+            }
           </div>
           <button type="button" class="defer-btn" data-action="defer" aria-label="Postpone one day">${ICONS.chev}</button>
         </div>
@@ -492,14 +521,112 @@ function autosizeTitleField() {
   el.style.height = `${Math.max(el.scrollHeight, 44)}px`;
 }
 
+function readDialogSubtasksFromDom(keepEmpty = false) {
+  const list = document.getElementById("subtask-list");
+  if (!list) return state.dialogSubtasks.slice();
+  /** @type {Subtask[]} */
+  const out = [];
+  list.querySelectorAll(".subtask-item").forEach((li) => {
+    const id = li.getAttribute("data-id") || uid();
+    const input = /** @type {HTMLInputElement|null} */ (li.querySelector(".subtask-title"));
+    const bullet = li.querySelector(".subtask-bullet");
+    const title = (input?.value || "").trim();
+    const done = bullet?.classList.contains("done") || false;
+    if (title || keepEmpty) out.push({ id, title: input?.value || "", done });
+  });
+  return out;
+}
+
+function renderSubtaskList() {
+  const list = document.getElementById("subtask-list");
+  const empty = document.getElementById("subtasks-empty");
+  if (!list) return;
+  list.innerHTML = state.dialogSubtasks
+    .map(
+      (s) => `
+    <li class="subtask-item" data-id="${escapeHtml(s.id)}">
+      <button type="button" class="subtask-bullet${s.done ? " done" : ""}" data-action="toggle-sub" aria-label="Toggle sub task">
+        <span class="subtask-dot"></span>
+      </button>
+      <input type="text" class="subtask-title" maxlength="300" value="${escapeHtml(s.title)}" placeholder="Sub task…" />
+      <button type="button" class="subtask-drag" data-action="drag-sub" aria-label="Drag to reorder" title="Drag to reorder">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M9 5h2v2H9V5zm4 0h2v2h-2V5zM9 11h2v2H9v-2zm4 0h2v2h-2v-2zM9 17h2v2H9v-2zm4 0h2v2h-2v-2z"/></svg>
+      </button>
+    </li>`
+    )
+    .join("");
+  if (empty) empty.hidden = state.dialogSubtasks.length > 0;
+  bindSubtaskDragHandles();
+}
+
+function addDialogSubtask() {
+  state.dialogSubtasks = readDialogSubtasksFromDom(true).map(normalizeSubtask);
+  state.dialogSubtasks.push({ id: uid(), title: "", done: false });
+  renderSubtaskList();
+  const inputs = document.querySelectorAll("#subtask-list .subtask-title");
+  const last = /** @type {HTMLInputElement|undefined} */ (inputs[inputs.length - 1]);
+  if (last) last.focus();
+}
+
+/** @type {{ item: HTMLElement, pointerId: number } | null} */
+let subDrag = null;
+
+function bindSubtaskDragHandles() {
+  const list = document.getElementById("subtask-list");
+  if (!list) return;
+  list.querySelectorAll(".subtask-drag").forEach((handle) => {
+    handle.addEventListener("pointerdown", (e) => {
+      const ev = /** @type {PointerEvent} */ (e);
+      const item = /** @type {HTMLElement} */ (handle.closest(".subtask-item"));
+      if (!item) return;
+      ev.preventDefault();
+      subDrag = { item, pointerId: ev.pointerId };
+      item.classList.add("dragging");
+      try {
+        handle.setPointerCapture(ev.pointerId);
+      } catch {
+        /* ignore */
+      }
+    });
+    handle.addEventListener("pointermove", onSubtaskPointerMove);
+    handle.addEventListener("pointerup", onSubtaskPointerUp);
+    handle.addEventListener("pointercancel", onSubtaskPointerUp);
+  });
+}
+
+function onSubtaskPointerMove(e) {
+  if (!subDrag) return;
+  const list = document.getElementById("subtask-list");
+  if (!list) return;
+  const ev = /** @type {PointerEvent} */ (e);
+  if (ev.pointerId !== subDrag.pointerId) return;
+  const el = document.elementFromPoint(ev.clientX, ev.clientY);
+  const over = el?.closest(".subtask-item");
+  if (!over || over === subDrag.item || !list.contains(over)) return;
+  const rect = over.getBoundingClientRect();
+  const before = ev.clientY < rect.top + rect.height / 2;
+  list.insertBefore(subDrag.item, before ? over : over.nextSibling);
+}
+
+function onSubtaskPointerUp(e) {
+  if (!subDrag) return;
+  const ev = /** @type {PointerEvent} */ (e);
+  if (ev.pointerId !== subDrag.pointerId) return;
+  subDrag.item.classList.remove("dragging");
+  subDrag = null;
+  state.dialogSubtasks = readDialogSubtasksFromDom(true).map(normalizeSubtask);
+}
+
 function openDialog(task) {
   const dlg = document.getElementById("task-dialog");
   const deleteBtn = document.getElementById("btn-dialog-delete");
   document.getElementById("dialog-title").textContent = task ? "Edit task" : "New task";
   document.getElementById("field-id").value = task?.id || "";
   document.getElementById("field-title").value = task?.title || "";
-  document.getElementById("field-notes").value = task?.notes || "";
   deleteBtn.hidden = !task;
+
+  state.dialogSubtasks = (task?.subtasks || []).map(normalizeSubtask);
+  renderSubtaskList();
 
   let date = "";
   let time = "";
@@ -539,7 +666,8 @@ function saveFromForm(e) {
     done: existing?.done || false,
     progress: existing?.progress ?? 0,
     total: existing?.total ?? 0,
-    notes: document.getElementById("field-notes").value,
+    notes: existing?.notes || "",
+    subtasks: readDialogSubtasksFromDom(false),
   });
 
   const idx = state.tasks.findIndex((t) => t.id === id);
@@ -782,6 +910,7 @@ function bindEvents() {
   });
 
   document.getElementById("btn-add").addEventListener("click", () => openDialog(null));
+  document.getElementById("btn-add-fab").addEventListener("click", () => openDialog(null));
   document.getElementById("btn-dialog-close").addEventListener("click", () => {
     document.getElementById("task-dialog").close();
   });
@@ -792,6 +921,13 @@ function bindEvents() {
     deleteTask(id);
   });
   document.getElementById("field-title").addEventListener("input", autosizeTitleField);
+  document.getElementById("btn-add-subtask").addEventListener("click", addDialogSubtask);
+  document.getElementById("subtask-list").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-action='toggle-sub']");
+    if (!btn) return;
+    e.preventDefault();
+    btn.classList.toggle("done");
+  });
   document.getElementById("task-form").addEventListener("submit", saveFromForm);
 
   const listEl = document.getElementById("task-list");
@@ -923,6 +1059,8 @@ if (initFirebase() && auth) {
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch(() => {});
+    navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch((err) => {
+      console.warn("Service worker registration failed:", err);
+    });
   });
 }
