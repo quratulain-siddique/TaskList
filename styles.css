@@ -10,6 +10,7 @@
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --bar-h: 56px;
+  --font-base: 17px;
   font-family: "Segoe UI", "Roboto", "Helvetica Neue", sans-serif;
 }
 
@@ -25,7 +26,14 @@ html, body {
   min-height: 100%;
   background: var(--bg);
   color: var(--text);
+  font-size: var(--font-base);
   -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 480px) {
+  :root {
+    --font-base: 18px;
+  }
 }
 
 body {
@@ -53,7 +61,7 @@ body {
 .app-title {
   flex: 1;
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -120,15 +128,20 @@ body {
 }
 
 /* —— List —— */
-.task-list {
+.task-area {
+  position: relative;
   max-width: 640px;
   margin: 0 auto;
+  min-height: calc(100vh - var(--bar-h) - var(--safe-top) - 48px);
+}
+
+.task-list {
   padding: 8px 12px 24px;
 }
 
 .section-label {
   margin: 16px 4px 8px;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   font-weight: 500;
   color: var(--muted);
   letter-spacing: 0.01em;
@@ -245,9 +258,9 @@ body {
 
 .task-title {
   margin: 0 0 4px;
-  font-size: 0.98rem;
+  font-size: 1.05rem;
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.4;
   word-wrap: break-word;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -258,7 +271,7 @@ body {
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   color: var(--muted);
 }
 
@@ -309,10 +322,50 @@ body {
   color: var(--muted);
   margin-top: 48px;
   padding: 0 24px;
+  font-size: 1.05rem;
 }
 
 .empty-state[hidden] {
   display: none !important;
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(242, 242, 242, 0.85);
+  border-radius: 0;
+}
+
+.loading-overlay[hidden] {
+  display: none !important;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e0e0e0;
+  border-top-color: var(--yellow);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+
+.loading-text {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* —— FAB removed; add lives in app bar —— */
@@ -411,7 +464,7 @@ iframe[src*="netlify"],
   border: 0;
   background: transparent;
   padding: 14px 20px;
-  font-size: 0.95rem;
+  font-size: 1rem;
   cursor: pointer;
   color: var(--text);
 }
@@ -538,6 +591,17 @@ iframe[src*="netlify"],
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.2);
 }
 
+/* Task dialog: centered box on all screen sizes */
+#task-dialog.sheet {
+  margin: auto;
+  width: 80%;
+  max-width: 420px;
+  max-height: min(85vh, 90%);
+  height: fit-content;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+}
+
 .sheet::backdrop {
   background: rgba(0, 0, 0, 0.45);
 }
@@ -547,6 +611,12 @@ iframe[src*="netlify"],
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+#task-dialog.sheet form {
+  padding: 18px 16px;
+  overflow-y: auto;
+  max-height: min(85vh, 90%);
 }
 
 .sheet h2 {
@@ -602,14 +672,14 @@ iframe[src*="netlify"],
   border: 1px solid #ddd;
   border-radius: 8px;
   padding: 10px 12px;
-  font-size: 1rem;
+  font-size: 1.05rem;
   background: #fff;
 }
 
 .sheet textarea#field-title {
   resize: none;
   min-height: 2.75em;
-  max-height: 40vh;
+  max-height: 30vh;
   line-height: 1.4;
   white-space: pre-wrap;
   word-wrap: break-word;
@@ -632,29 +702,36 @@ iframe[src*="netlify"],
 
 .dialog-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   margin-top: 8px;
 }
 
-.dialog-actions-spacer {
+#task-dialog .dialog-actions {
+  flex-direction: row;
+}
+
+#task-dialog .dialog-actions:has(.btn-danger[hidden]) {
+  justify-content: flex-end;
+}
+
+#task-dialog .dialog-actions:has(.btn-danger:not([hidden])) .btn-danger,
+#task-dialog .dialog-actions:has(.btn-danger:not([hidden])) .btn-primary {
   flex: 1;
 }
 
-.btn-ghost.danger-text {
-  color: var(--danger);
-  margin-right: auto;
-}
-
 .btn-ghost,
-.btn-primary {
+.btn-primary,
+.btn-danger {
   border: 0;
   border-radius: 8px;
   padding: 10px 18px;
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
+  min-width: 96px;
+  text-align: center;
 }
 
 .btn-ghost {
@@ -671,11 +748,30 @@ iframe[src*="netlify"],
   background: var(--yellow-dark);
 }
 
+.btn-danger {
+  background: #ffebee;
+  color: var(--danger);
+  border: 1px solid #ffcdd2;
+}
+
+.btn-danger:active {
+  background: #ffcdd2;
+}
+
+.btn-danger[hidden] {
+  display: none !important;
+}
+
 @media (min-width: 480px) {
   .sheet {
     border-radius: 16px;
     margin: auto;
     width: min(420px, calc(100% - 32px));
     max-height: 85vh;
+  }
+
+  #task-dialog.sheet {
+    width: 80%;
+    max-width: 420px;
   }
 }

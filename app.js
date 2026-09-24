@@ -169,54 +169,70 @@ function readLocalTasksSnapshot() {
   }
 }
 
+function setLoading(on, message = "Loading tasks…") {
+  const el = document.getElementById("loading-overlay");
+  const text = el?.querySelector(".loading-text");
+  if (!el) return;
+  if (text) text.textContent = message;
+  el.hidden = !on;
+}
+
 async function startCloudSync(user) {
   stopCloudSync();
-  const ref = userDocRef(user.uid);
-  const snap = await getDoc(ref);
-  const localGuest = readLocalTasksSnapshot();
-  const cloudTasks =
-    snap.exists() && Array.isArray(snap.data()?.tasks)
-      ? snap.data().tasks.map(normalizeTask)
-      : [];
-
-  // Merge guest/local-only tasks into the account, then use that as the source of truth
-  const merged = mergeTaskLists(cloudTasks, localGuest);
-
-  applyingRemote = true;
-  state.tasks = merged;
-  writeLocalReplica(merged);
-  markReplicaCheckedToday();
-  applyingRemote = false;
-  render();
-
-  await setDoc(
-    ref,
-    {
-      tasks: merged,
-      updatedAt: new Date().toISOString(),
-      email: user.email || "",
-    },
-    { merge: true }
-  );
-
-  unsubTasks = onSnapshot(
-    ref,
-    (docSnap) => {
-      if (!docSnap.exists()) return;
-      const remote = Array.isArray(docSnap.data()?.tasks)
-        ? docSnap.data().tasks.map(normalizeTask)
+  setLoading(true, "Syncing tasks…");
+  try {
+    const ref = userDocRef(user.uid);
+    const snap = await getDoc(ref);
+    const localGuest = readLocalTasksSnapshot();
+    const cloudTasks =
+      snap.exists() && Array.isArray(snap.data()?.tasks)
+        ? snap.data().tasks.map(normalizeTask)
         : [];
-      applyingRemote = true;
-      state.tasks = remote;
-      writeLocalReplica(remote);
-      markReplicaCheckedToday();
-      applyingRemote = false;
-      render();
-    },
-    (err) => {
-      console.warn("Cloud sync error:", err);
-    }
-  );
+
+    // Merge guest/local-only tasks into the account, then use that as the source of truth
+    const merged = mergeTaskLists(cloudTasks, localGuest);
+
+    applyingRemote = true;
+    state.tasks = merged;
+    writeLocalReplica(merged);
+    markReplicaCheckedToday();
+    applyingRemote = false;
+    render();
+
+    await setDoc(
+      ref,
+      {
+        tasks: merged,
+        updatedAt: new Date().toISOString(),
+        email: user.email || "",
+      },
+      { merge: true }
+    );
+
+    unsubTasks = onSnapshot(
+      ref,
+      (docSnap) => {
+        if (!docSnap.exists()) return;
+        const remote = Array.isArray(docSnap.data()?.tasks)
+          ? docSnap.data().tasks.map(normalizeTask)
+          : [];
+        applyingRemote = true;
+        state.tasks = remote;
+        writeLocalReplica(remote);
+        markReplicaCheckedToday();
+        applyingRemote = false;
+        setLoading(false);
+        render();
+      },
+      (err) => {
+        console.warn("Cloud sync error:", err);
+        setLoading(false);
+      }
+    );
+  } catch (e) {
+    setLoading(false);
+    throw e;
+  }
 }
 
 function handleAuthUser(user) {
@@ -224,8 +240,10 @@ function handleAuthUser(user) {
   if (user) {
     state.user = { uid: user.uid, email: user.email || "" };
     updateAccountUi();
+    setLoading(true, "Loading tasks…");
     startCloudSync(state.user).catch((e) => {
       console.warn(e);
+      setLoading(false);
       alert("Signed in, but could not load cloud tasks.");
     });
   } else {
@@ -233,6 +251,7 @@ function handleAuthUser(user) {
     state.user = null;
     updateAccountUi();
     loadLocalTasks();
+    setLoading(false);
     render();
   }
 }
@@ -889,6 +908,7 @@ updateAccountUi();
 
 if (initFirebase() && auth) {
   // Wait for auth before showing tasks so we don't flash old guest list then account list
+  setLoading(true, "Loading tasks…");
   onAuthStateChanged(auth, (user) => {
     handleAuthUser(user);
   });
@@ -897,6 +917,7 @@ if (initFirebase() && auth) {
   });
 } else {
   loadLocalTasks();
+  setLoading(false);
   render();
 }
 
