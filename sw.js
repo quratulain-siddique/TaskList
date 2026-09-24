@@ -1,4 +1,4 @@
-const CACHE = "tasks-v4";
+const CACHE = "tasks-v7";
 const ASSETS = [
   "./",
   "./index.html",
@@ -7,7 +7,6 @@ const ASSETS = [
   "./firebase-config.js",
   "./manifest.json",
   "./icons/icon.svg",
-  "./data/tasks.txt",
 ];
 
 function isAppShell(url) {

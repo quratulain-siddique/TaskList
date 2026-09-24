@@ -6,14 +6,13 @@
  * (localStorage only). Sign-in requires a real project.
  */
 export const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
+  apiKey: "AIzaSyBtxaVvS1De_dI_pnDzanoh_sHiZFoBW3k",
+  authDomain: "tasklist-8347c.firebaseapp.com",
+  projectId: "tasklist-8347c",
+  storageBucket: "tasklist-8347c.firebasestorage.app",
+  messagingSenderId: "1057786868146",
+  appId: "1:1057786868146:web:aa1b53c19e859ce9cf34ab"
 };
-
 export function isFirebaseConfigured() {
   return (
     firebaseConfig.apiKey &&

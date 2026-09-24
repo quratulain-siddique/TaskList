@@ -30,7 +30,7 @@ html, body {
 
 body {
   padding-top: calc(var(--bar-h) + var(--safe-top));
-  padding-bottom: calc(88px + var(--safe-bottom));
+  padding-bottom: calc(24px + var(--safe-bottom));
 }
 
 /* —— App bar —— */
@@ -280,27 +280,16 @@ body {
   display: none !important;
 }
 
-/* —— FAB —— */
-.fab {
-  position: fixed;
-  right: max(16px, env(safe-area-inset-right));
-  bottom: max(20px, calc(16px + var(--safe-bottom)));
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  border: 0;
-  background: var(--yellow);
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  z-index: 30;
-}
+/* —— FAB removed; add lives in app bar —— */
 
-.fab:active {
-  background: var(--yellow-dark);
-  transform: scale(0.96);
+/* Hide Netlify’s floating “Powered by” / deploy badge if injected */
+iframe[title*="Netlify"],
+iframe[src*="netlify"],
+[data-netlify-deploy-id],
+#netlify-badge {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 /* —— Drawer —— */
@@ -355,7 +344,7 @@ body {
 }
 
 .drawer-nav {
-  padding: 8px 0;
+  padding: 8px 0 calc(12px + var(--safe-bottom));
   flex: 1;
   overflow-y: auto;
 }
@@ -392,6 +381,10 @@ body {
   color: var(--text);
 }
 
+.drawer-item[hidden] {
+  display: none !important;
+}
+
 .drawer-item.drawer-subitem {
   padding: 12px 20px 12px 32px;
   font-size: 0.92rem;
@@ -404,17 +397,51 @@ body {
   font-weight: 600;
 }
 
-.drawer-footer {
-  border-top: 1px solid var(--border);
-  padding: 8px 0 calc(12px + var(--safe-bottom));
-}
-
 .auth-hint {
   margin: 0 0 4px;
   font-size: 0.85rem;
   font-weight: 400;
   color: var(--muted);
   line-height: 1.4;
+}
+
+.password-input-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.password-input-wrap:focus-within {
+  outline: 2px solid rgba(241, 168, 32, 0.45);
+  border-color: var(--yellow);
+}
+
+.password-input-wrap input {
+  flex: 1;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: none !important;
+  min-width: 0;
+}
+
+.password-toggle {
+  flex-shrink: 0;
+  border: 0;
+  border-left: 1px solid #eee;
+  background: #fafafa;
+  color: var(--yellow-dark);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.password-toggle:active {
+  background: #f0f0f0;
 }
 
 .auth-error {

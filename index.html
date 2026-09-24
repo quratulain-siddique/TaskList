@@ -21,11 +21,11 @@
     </button>
     <h1 class="app-title">Tasks</h1>
     <div class="app-actions">
+      <button type="button" class="icon-btn" id="btn-add" aria-label="Add task">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+      </button>
       <button type="button" class="icon-btn" id="btn-search" aria-label="Search">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-      </button>
-      <button type="button" class="icon-btn" id="btn-check-all" aria-label="Mark all complete">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M18 7l-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/></svg>
       </button>
       <button type="button" class="icon-btn" id="btn-more" aria-label="More">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
@@ -40,11 +40,7 @@
 
   <main class="task-list" id="task-list" aria-live="polite"></main>
 
-  <p class="empty-state" id="empty-state" hidden>No tasks yet. Tap + to add one.</p>
-
-  <button type="button" class="fab" id="btn-add" aria-label="Add task">
-    <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-  </button>
+  <p class="empty-state" id="empty-state" hidden>No tasks yet. Tap + in the top bar to add one.</p>
 
   <!-- Side drawer -->
   <div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
@@ -56,8 +52,7 @@
     <nav class="drawer-nav">
       <section class="drawer-section" id="drawer-sync">
         <h2 class="drawer-section-title">Sync</h2>
-        <button type="button" class="drawer-item drawer-subitem" id="btn-sign-in">Sign in</button>
-        <button type="button" class="drawer-item drawer-subitem" id="btn-sign-up">Sign up</button>
+        <button type="button" class="drawer-item drawer-subitem" id="btn-sign-in">Sign in / Sign up</button>
         <button type="button" class="drawer-item drawer-subitem" id="btn-sign-out" hidden>Sign out</button>
       </section>
       <section class="drawer-section">
@@ -65,24 +60,17 @@
         <button type="button" class="drawer-item drawer-subitem active" data-filter="all">All tasks</button>
       </section>
     </nav>
-    <div class="drawer-footer">
-      <button type="button" class="drawer-item" id="btn-import">Import from file</button>
-      <button type="button" class="drawer-item" id="btn-export">Export to file</button>
-      <input type="file" id="file-input" accept=".txt,.csv,.json,text/plain,application/json" hidden />
-    </div>
   </aside>
 
   <!-- More menu -->
   <div class="menu-backdrop" id="menu-backdrop" hidden></div>
   <div class="overflow-menu" id="overflow-menu" hidden role="menu">
-    <button type="button" role="menuitem" id="menu-import">Import tasks file…</button>
-    <button type="button" role="menuitem" id="menu-export">Export tasks file…</button>
     <button type="button" role="menuitem" id="menu-clear-done">Clear completed</button>
   </div>
 
   <!-- Add / Edit dialog -->
   <dialog class="sheet" id="task-dialog">
-    <form method="dialog" id="task-form">
+    <form id="task-form">
       <h2 id="dialog-title">New task</h2>
       <label>
         Title
@@ -126,20 +114,23 @@
   <dialog class="sheet" id="auth-dialog">
     <form id="auth-form">
       <h2 id="auth-dialog-title">Sign in</h2>
-      <p class="auth-hint">Use the same email on any device to sync your tasks. Or keep using the app as a guest — tasks stay on this device only.</p>
+      <p class="auth-hint" id="auth-hint">Use the same email on any device to sync your tasks.</p>
       <label>
         Email
         <input type="email" id="auth-email" required autocomplete="email" placeholder="you@example.com" />
       </label>
-      <label>
+      <label class="password-field">
         Password
-        <input type="password" id="auth-password" required minlength="6" autocomplete="current-password" placeholder="At least 6 characters" />
+        <span class="password-input-wrap">
+          <input type="password" id="auth-password" required minlength="6" autocomplete="current-password" placeholder="At least 6 characters" />
+          <button type="button" class="password-toggle" id="btn-password-toggle" aria-label="Show password" aria-pressed="false">Show</button>
+        </span>
       </label>
       <p class="auth-error" id="auth-error" hidden></p>
       <div class="dialog-actions auth-actions">
         <button type="button" class="btn-ghost" id="btn-auth-cancel">Cancel</button>
-        <button type="button" class="btn-primary" id="btn-auth-signup">Sign up</button>
-        <button type="submit" class="btn-primary" id="btn-auth-signin">Sign in</button>
+        <button type="button" class="btn-ghost" id="btn-auth-switch">Sign up</button>
+        <button type="submit" class="btn-primary" id="btn-auth-submit">Sign in</button>
       </div>
     </form>
   </dialog>

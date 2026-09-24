@@ -1,10 +1,6 @@
 /**
  * Personal Tasks — PWA
  * Guest: localStorage. Signed in: Firestore sync per email.
- * Also: pipe-delimited .txt / JSON import-export.
- *
- * File format (tasks.txt), one task per line:
- * id|title|dueISO|done|progress|total|notes
  */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
@@ -25,7 +21,6 @@ import {
 import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
 
 const STORAGE_KEY = "my-tasks-v1";
-const FILE_SEP = "|";
 
 /** @typedef {{ id: string, title: string, due: string|null, done: boolean, progress: number, total: number, notes: string }} Task */
 
@@ -68,17 +63,14 @@ function userDocRef(uid) {
 function updateAccountUi() {
   const sub = document.getElementById("drawer-sub");
   const btnIn = document.getElementById("btn-sign-in");
-  const btnUp = document.getElementById("btn-sign-up");
   const btnOut = document.getElementById("btn-sign-out");
   if (state.user) {
-    sub.textContent = state.user.email;
+    sub.textContent = state.user.email || "Signed in";
     btnIn.hidden = true;
-    btnUp.hidden = true;
     btnOut.hidden = false;
   } else {
     sub.textContent = "Guest — stored on this device";
     btnIn.hidden = false;
-    btnUp.hidden = false;
     btnOut.hidden = true;
   }
 }
@@ -235,133 +227,6 @@ function normalizeTask(t) {
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-}
-
-// —— File format ——
-
-function tasksToDelimited(tasks) {
-  const header = "# id|title|due|done|progress|total|notes";
-  const lines = tasks.map((t) =>
-    [
-      t.id,
-      escapeField(t.title),
-      t.due || "",
-      t.done ? "1" : "0",
-      t.progress,
-      t.total,
-      escapeField(t.notes),
-    ].join(FILE_SEP)
-  );
-  return [header, ...lines].join("\n") + "\n";
-}
-
-function escapeField(s) {
-  return String(s).replace(/\|/g, "\\|").replace(/\n/g, "\\n");
-}
-
-function unescapeField(s) {
-  return String(s).replace(/\\n/g, "\n").replace(/\\\|/g, "|");
-}
-
-function parseDelimited(text) {
-  /** @type {Task[]} */
-  const out = [];
-  for (const line of text.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const parts = splitEscaped(trimmed);
-    if (parts.length < 2) continue;
-    out.push(
-      normalizeTask({
-        id: parts[0],
-        title: unescapeField(parts[1] || ""),
-        due: parts[2] || null,
-        done: parts[3] === "1" || parts[3] === "true",
-        progress: parts[4],
-        total: parts[5],
-        notes: unescapeField(parts[6] || ""),
-      })
-    );
-  }
-  return out;
-}
-
-function splitEscaped(line) {
-  const parts = [];
-  let cur = "";
-  for (let i = 0; i < line.length; i++) {
-    if (line[i] === "\\" && i + 1 < line.length) {
-      cur += line[i] + line[i + 1];
-      i++;
-      continue;
-    }
-    if (line[i] === FILE_SEP) {
-      parts.push(cur);
-      cur = "";
-      continue;
-    }
-    cur += line[i];
-  }
-  parts.push(cur);
-  return parts;
-}
-
-function parseImportFile(text, name) {
-  const trimmed = text.trim();
-  if (name.endsWith(".json") || trimmed.startsWith("[") || trimmed.startsWith("{")) {
-    const data = JSON.parse(trimmed);
-    const arr = Array.isArray(data) ? data : data.tasks;
-    if (!Array.isArray(arr)) throw new Error("JSON must be an array of tasks");
-    return arr.map(normalizeTask);
-  }
-  return parseDelimited(trimmed);
-}
-
-function exportFile() {
-  const body = tasksToDelimited(state.tasks);
-  const blob = new Blob([body], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "tasks.txt";
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function importFile(file) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const imported = parseImportFile(String(reader.result), file.name.toLowerCase());
-      if (!imported.length) {
-        alert("No tasks found in that file.");
-        return;
-      }
-      const replace = confirm(
-        `Found ${imported.length} task(s).\n\nOK = replace all current tasks\nCancel = merge with existing`
-      );
-      if (replace) {
-        state.tasks = imported;
-      } else {
-        const ids = new Set(state.tasks.map((t) => t.id));
-        for (const t of imported) {
-          if (ids.has(t.id)) {
-            const i = state.tasks.findIndex((x) => x.id === t.id);
-            state.tasks[i] = t;
-          } else {
-            state.tasks.push(t);
-          }
-        }
-      }
-      saveTasks();
-      render();
-      closeDrawer();
-      closeMenu();
-    } catch (e) {
-      alert("Could not read file: " + (e.message || e));
-    }
-  };
-  reader.readAsText(file);
 }
 
 // —— Date helpers ——
@@ -654,31 +519,49 @@ function deleteTask(id) {
 
 // —— Auth UI ——
 
-function openAuthDialog(mode = "signin") {
-  if (!isFirebaseConfigured() || !auth) {
-    alert(
-      "Cloud sync is not set up yet.\n\nAdd your Firebase config to firebase-config.js (see README)."
-    );
-    return;
-  }
+/** @type {"signin" | "signup"} */
+let authMode = "signin";
+
+function setAuthMode(mode) {
+  authMode = mode;
+  const isSignUp = mode === "signup";
+  document.getElementById("auth-dialog-title").textContent = isSignUp ? "Sign up" : "Sign in";
+  document.getElementById("auth-hint").textContent = isSignUp
+    ? "Create an account to sync tasks across your devices."
+    : "Use the same email on any device to sync your tasks.";
+  document.getElementById("btn-auth-switch").textContent = isSignUp ? "Sign in" : "Sign up";
+  document.getElementById("btn-auth-submit").textContent = isSignUp ? "Sign up" : "Sign in";
+  document.getElementById("auth-password").autocomplete = isSignUp ? "new-password" : "current-password";
   document.getElementById("auth-error").hidden = true;
   document.getElementById("auth-error").textContent = "";
+}
+
+function openAuthDialog() {
   document.getElementById("auth-email").value = "";
   document.getElementById("auth-password").value = "";
-  document.getElementById("auth-dialog-title").textContent = mode === "signup" ? "Sign up" : "Sign in";
-  document.getElementById("btn-auth-signin").hidden = mode === "signup";
-  document.getElementById("btn-auth-signup").hidden = mode === "signin";
-  if (mode === "signup") {
-    document.getElementById("auth-password").autocomplete = "new-password";
+  const pw = document.getElementById("auth-password");
+  const toggle = document.getElementById("btn-password-toggle");
+  pw.type = "password";
+  toggle.textContent = "Show";
+  toggle.setAttribute("aria-label", "Show password");
+  toggle.setAttribute("aria-pressed", "false");
+  setAuthMode("signin");
+  const dlg = document.getElementById("auth-dialog");
+  if (typeof dlg.showModal === "function") {
+    dlg.showModal();
   } else {
-    document.getElementById("auth-password").autocomplete = "current-password";
+    dlg.setAttribute("open", "");
   }
-  document.getElementById("auth-dialog").showModal();
   document.getElementById("auth-email").focus();
 }
 
 function closeAuthDialog() {
-  document.getElementById("auth-dialog").close();
+  const dlg = document.getElementById("auth-dialog");
+  if (typeof dlg.close === "function") {
+    dlg.close();
+  } else {
+    dlg.removeAttribute("open");
+  }
 }
 
 function authErrorMessage(err) {
@@ -689,6 +572,7 @@ function authErrorMessage(err) {
   if (code === "auth/user-not-found" || code === "auth/wrong-password" || code === "auth/invalid-credential")
     return "Wrong email or password.";
   if (code === "auth/too-many-requests") return "Too many attempts. Try again later.";
+  if (code === "auth/network-request-failed") return "Network error. Check your connection.";
   return err?.message || "Something went wrong.";
 }
 
@@ -698,9 +582,20 @@ function showAuthError(err) {
   el.hidden = false;
 }
 
+function requireFirebaseReady() {
+  if (!isFirebaseConfigured() || !auth) {
+    showAuthError({
+      message:
+        "Cloud sync is not set up yet. Add your Firebase config to firebase-config.js (see README), then try again.",
+    });
+    return false;
+  }
+  return true;
+}
+
 async function doSignIn(e) {
-  e.preventDefault();
-  if (!auth) return;
+  if (e) e.preventDefault();
+  if (!requireFirebaseReady()) return;
   const email = document.getElementById("auth-email").value.trim();
   const password = document.getElementById("auth-password").value;
   try {
@@ -713,7 +608,7 @@ async function doSignIn(e) {
 }
 
 async function doSignUp() {
-  if (!auth) return;
+  if (!requireFirebaseReady()) return;
   const email = document.getElementById("auth-email").value.trim();
   const password = document.getElementById("auth-password").value;
   if (!email || password.length < 6) {
@@ -729,8 +624,17 @@ async function doSignUp() {
   }
 }
 
+async function submitAuthForm(e) {
+  e.preventDefault();
+  if (authMode === "signup") await doSignUp();
+  else await doSignIn();
+}
+
 async function doSignOut() {
-  if (!auth) return;
+  if (!auth) {
+    closeDrawer();
+    return;
+  }
   try {
     await signOut(auth);
     closeDrawer();
@@ -774,10 +678,6 @@ function showSearch(show) {
   }
 }
 
-function pickFile() {
-  document.getElementById("file-input").click();
-}
-
 // —— Events ——
 
 function bindEvents() {
@@ -790,30 +690,8 @@ function bindEvents() {
     render();
   });
 
-  document.getElementById("btn-sort").addEventListener("click", () => {
-    state.sort = state.sort === "due" ? "title" : "due";
-    render();
-  });
-
-  document.getElementById("btn-check-all").addEventListener("click", () => {
-    const active = state.tasks.filter((t) => !t.done);
-    if (!active.length) return;
-    if (!confirm(`Mark all ${active.length} active task(s) complete?`)) return;
-    for (const t of active) t.done = true;
-    saveTasks();
-    render();
-  });
-
   document.getElementById("btn-more").addEventListener("click", openMenu);
   document.getElementById("menu-backdrop").addEventListener("click", closeMenu);
-  document.getElementById("menu-import").addEventListener("click", () => {
-    closeMenu();
-    pickFile();
-  });
-  document.getElementById("menu-export").addEventListener("click", () => {
-    closeMenu();
-    exportFile();
-  });
   document.getElementById("menu-clear-done").addEventListener("click", () => {
     closeMenu();
     const n = state.tasks.filter((t) => t.done).length;
@@ -824,31 +702,25 @@ function bindEvents() {
     render();
   });
 
-  document.getElementById("btn-import").addEventListener("click", pickFile);
-  document.getElementById("btn-export").addEventListener("click", exportFile);
-  document.getElementById("file-input").addEventListener("change", (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (file) importFile(file);
-  });
-
   document.getElementById("btn-sign-in").addEventListener("click", () => {
     closeDrawer();
-    openAuthDialog("signin");
-  });
-  document.getElementById("btn-sign-up").addEventListener("click", () => {
-    closeDrawer();
-    openAuthDialog("signup");
+    openAuthDialog();
   });
   document.getElementById("btn-sign-out").addEventListener("click", doSignOut);
   document.getElementById("btn-auth-cancel").addEventListener("click", closeAuthDialog);
-  document.getElementById("btn-auth-signup").addEventListener("click", doSignUp);
-  document.getElementById("auth-form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const title = document.getElementById("auth-dialog-title").textContent;
-    if (title === "Sign up") doSignUp();
-    else doSignIn(e);
+  document.getElementById("btn-auth-switch").addEventListener("click", () => {
+    setAuthMode(authMode === "signin" ? "signup" : "signin");
   });
+  document.getElementById("btn-password-toggle").addEventListener("click", () => {
+    const input = document.getElementById("auth-password");
+    const btn = document.getElementById("btn-password-toggle");
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    btn.textContent = show ? "Hide" : "Show";
+    btn.setAttribute("aria-label", show ? "Hide password" : "Show password");
+    btn.setAttribute("aria-pressed", show ? "true" : "false");
+  });
+  document.getElementById("auth-form").addEventListener("submit", submitAuthForm);
 
   document.querySelectorAll(".drawer-item[data-filter]").forEach((btn) => {
     btn.addEventListener("click", () => {
