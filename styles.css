@@ -134,12 +134,41 @@ body {
   letter-spacing: 0.01em;
 }
 
+.task-card-wrap {
+  position: relative;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #4caf50;
+}
+
+.task-swipe-label {
+  position: absolute;
+  left: 16px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.task-card-wrap.swiping .task-swipe-label {
+  opacity: 1;
+}
+
 .task-card {
+  position: relative;
   background: var(--card);
   border-radius: 10px;
-  margin-bottom: 8px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-  overflow: hidden;
+  transition: transform 0.2s ease;
+  touch-action: pan-y;
+  will-change: transform;
 }
 
 .task-row {
@@ -221,7 +250,7 @@ body {
   color: var(--danger);
 }
 
-.expand-btn {
+.defer-btn {
   flex-shrink: 0;
   width: 36px;
   height: 36px;
@@ -233,45 +262,11 @@ body {
   place-items: center;
   cursor: pointer;
   margin-top: 2px;
-  transition: transform 0.2s ease;
 }
 
-.expand-btn.open {
-  transform: rotate(180deg);
-}
-
-.task-details {
-  padding: 0 16px 14px 52px;
-  font-size: 0.88rem;
-  color: var(--muted);
-  line-height: 1.45;
-  white-space: pre-wrap;
-  border-top: 1px solid transparent;
-}
-
-.task-details[hidden] {
-  display: none !important;
-}
-
-.task-details-actions {
-  margin-top: 10px;
-  display: flex;
-  gap: 8px;
-}
-
-.chip-btn {
-  border: 1px solid var(--border);
-  background: #fafafa;
-  border-radius: 16px;
-  padding: 6px 12px;
-  font-size: 0.8rem;
-  cursor: pointer;
-  color: var(--text);
-}
-
-.chip-btn.danger {
-  color: var(--danger);
-  border-color: #ffcdd2;
+.defer-btn:active {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--yellow-dark);
 }
 
 .empty-state {
@@ -360,8 +355,29 @@ body {
 }
 
 .drawer-nav {
-  padding: 12px 0;
+  padding: 8px 0;
   flex: 1;
+  overflow-y: auto;
+}
+
+.drawer-section {
+  padding: 4px 0 12px;
+}
+
+.drawer-section + .drawer-section {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 12px;
+}
+
+.drawer-section-title {
+  margin: 0;
+  padding: 8px 20px 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .drawer-item {
@@ -376,6 +392,11 @@ body {
   color: var(--text);
 }
 
+.drawer-item.drawer-subitem {
+  padding: 12px 20px 12px 32px;
+  font-size: 0.92rem;
+}
+
 .drawer-item:active,
 .drawer-item.active {
   background: #fff8e7;
@@ -386,6 +407,28 @@ body {
 .drawer-footer {
   border-top: 1px solid var(--border);
   padding: 8px 0 calc(12px + var(--safe-bottom));
+}
+
+.auth-hint {
+  margin: 0 0 4px;
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.auth-error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--danger);
+}
+
+.auth-error[hidden] {
+  display: none !important;
+}
+
+.auth-actions {
+  flex-wrap: wrap;
 }
 
 /* —— Overflow menu —— */
@@ -485,8 +528,18 @@ body {
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px;
   margin-top: 8px;
+}
+
+.dialog-actions-spacer {
+  flex: 1;
+}
+
+.btn-ghost.danger-text {
+  color: var(--danger);
+  margin-right: auto;
 }
 
 .btn-ghost,

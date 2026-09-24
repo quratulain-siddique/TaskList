@@ -2,7 +2,9 @@
 
 Free, installable mobile task list. Looks like a native app, works offline, and backs up to a simple text file you can edit anywhere.
 
-A fresh install starts with an **empty** list. Tasks live in that device’s browser storage (not shared). `data/tasks.txt` in the repo is only a blank template / backup format—populate it yourself or via Export, then Import on another device.
+- **Guest mode:** tasks stay in that device’s browser storage (not shared).
+- **Signed in:** the same email gets the same cloud-synced list on every device.
+- `data/tasks.txt` in the repo is only a blank template / backup format.
 
 ## Features
 
@@ -10,17 +12,44 @@ A fresh install starts with an **empty** list. Tasks live in that device’s bro
 - Groups: **Overdue**, **Today**, **Upcoming**, **Completed**
 - Search, sort, mark all complete
 - Offline Progressive Web App (PWA)
+- Optional email/password sync via Firebase
 - Import / export a pipe-delimited `tasks.txt` file (or JSON)
+
+## Firebase setup (cloud sync)
+
+Needed only if you want Sign in / Sign up. Without it, the app still works as a guest.
+
+1. Create a project at [Firebase Console](https://console.firebase.google.com).
+2. **Authentication** → Sign-in method → enable **Email/Password**.
+3. **Firestore Database** → Create database (production mode is fine).
+4. **Project settings** → Your apps → add a **Web** app → copy the config object into [`firebase-config.js`](firebase-config.js) (replace the `YOUR_…` placeholders).
+5. **Authentication** → Settings → **Authorized domains** → add your Netlify domain (e.g. `your-site.netlify.app`). `localhost` is allowed by default.
+6. **Firestore** → Rules → publish:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+```
+
+Each signed-in user stores tasks in `users/{uid}` (`tasks` array + `updatedAt`).
+
+**Login behavior:** cloud list loads for that account. If cloud is empty and this device has guest tasks, those are uploaded once. Guest `localStorage` is kept for when you sign out.
 
 ## Use on your phone (free)
 
 Browsers only allow “Add to Home Screen” for sites served over **https** (or localhost). Easiest free options:
 
-### Option A — GitHub Pages (recommended)
+### Option A — GitHub Pages / Netlify
 
 1. Push this folder to a GitHub repository
-2. Settings → Pages → Deploy from `main` / root
-3. Open the Pages URL on your phone
+2. Connect the repo to Netlify (or GitHub Pages → deploy from `main` / root)
+3. Open the site URL on your phone
 4. **Android (Chrome):** menu → **Install app** / **Add to Home screen**
 5. **iPhone (Safari):** Share → **Add to Home Screen**
 
@@ -62,11 +91,11 @@ You can also import a JSON array of the same fields.
 
 **Workflow:** edit `tasks.txt` on a PC → on the phone open the ⋮ menu → **Import tasks file**. Export anytime for backup.
 
-Day-to-day use stores data in the phone’s browser storage so the app stays fast offline; the text file is your portable backup / editor.
+Day-to-day: guests use browser storage; signed-in users sync via Firebase. The text file remains a portable backup / editor.
 
 ## Desktop / browser
 
-Open `index.html` via a local server (not as a raw `file://` link) so the service worker and install prompt work:
+Open `index.html` via a local server (not as a raw `file://` link) so modules, the service worker, and install prompt work:
 
 ```bash
 npx --yes serve .

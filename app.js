@@ -1,11 +1,28 @@
 /**
  * Personal Tasks — PWA
- * Storage: localStorage + pipe-delimited .txt / JSON import-export
+ * Guest: localStorage. Signed in: Firestore sync per email.
+ * Also: pipe-delimited .txt / JSON import-export.
  *
  * File format (tasks.txt), one task per line:
  * id|title|dueISO|done|progress|total|notes
- * Lines starting with # are comments. dueISO is YYYY-MM-DDTHH:mm or empty.
  */
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  onSnapshot,
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
 
 const STORAGE_KEY = "my-tasks-v1";
 const FILE_SEP = "|";
@@ -16,17 +33,99 @@ const state = {
   tasks: /** @type {Task[]} */ ([]),
   filter: "all", // all | active | done
   query: "",
-  sort: "due", // due | title | created
   editingId: null,
-  expanded: new Set(),
+  /** @type {{ uid: string, email: string } | null} */
+  user: null,
 };
 
-// —— Persistence ——
+/** @type {import("firebase/firestore").Unsubscribe | null} */
+let unsubTasks = null;
+/** @type {import("firebase/firestore").Firestore | null} */
+let db = null;
+/** @type {import("firebase/auth").Auth | null} */
+let auth = null;
+let applyingRemote = false;
 
-function loadTasks() {
+// —— Firebase ——
+
+function initFirebase() {
+  if (!isFirebaseConfigured()) return false;
+  try {
+    const app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+    return true;
+  } catch (e) {
+    console.warn("Firebase init failed:", e);
+    return false;
+  }
+}
+
+function userDocRef(uid) {
+  return doc(db, "users", uid);
+}
+
+function updateAccountUi() {
+  const sub = document.getElementById("drawer-sub");
+  const btnIn = document.getElementById("btn-sign-in");
+  const btnUp = document.getElementById("btn-sign-up");
+  const btnOut = document.getElementById("btn-sign-out");
+  if (state.user) {
+    sub.textContent = state.user.email;
+    btnIn.hidden = true;
+    btnUp.hidden = true;
+    btnOut.hidden = false;
+  } else {
+    sub.textContent = "Guest — stored on this device";
+    btnIn.hidden = false;
+    btnUp.hidden = false;
+    btnOut.hidden = true;
+  }
+}
+
+function stopCloudSync() {
+  if (unsubTasks) {
+    unsubTasks();
+    unsubTasks = null;
+  }
+}
+
+async function saveTasksCloud() {
+  if (!state.user || !db || applyingRemote) return;
+  try {
+    await setDoc(
+      userDocRef(state.user.uid),
+      {
+        tasks: state.tasks,
+        updatedAt: new Date().toISOString(),
+        email: state.user.email,
+      },
+      { merge: true }
+    );
+  } catch (e) {
+    console.warn("Cloud save failed:", e);
+    alert("Could not sync to the cloud. Check your connection.");
+  }
+}
+
+/**
+ * Persist current tasks: cloud when signed in, else localStorage.
+ */
+function saveTasks() {
+  if (state.user) {
+    saveTasksCloud();
+  } else {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.tasks));
+  }
+}
+
+function loadLocalTasks() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return seedIfEmpty();
+    if (!raw) {
+      state.tasks = [];
+      return;
+    }
     const parsed = JSON.parse(raw);
     state.tasks = Array.isArray(parsed) ? parsed.map(normalizeTask) : [];
   } catch {
@@ -34,13 +133,93 @@ function loadTasks() {
   }
 }
 
-function saveTasks() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.tasks));
+function readLocalTasksSnapshot() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(normalizeTask) : [];
+  } catch {
+    return [];
+  }
 }
 
-function seedIfEmpty() {
-  state.tasks = [];
+async function startCloudSync(user) {
+  stopCloudSync();
+  const ref = userDocRef(user.uid);
+  const snap = await getDoc(ref);
+  const localGuest = readLocalTasksSnapshot();
+
+  if (!snap.exists()) {
+    const initial = localGuest.length ? localGuest : [];
+    applyingRemote = true;
+    state.tasks = initial;
+    applyingRemote = false;
+    await setDoc(ref, {
+      tasks: initial,
+      updatedAt: new Date().toISOString(),
+      email: user.email || "",
+    });
+  } else {
+    const cloudTasks = Array.isArray(snap.data()?.tasks) ? snap.data().tasks.map(normalizeTask) : [];
+    if (cloudTasks.length === 0 && localGuest.length > 0) {
+      applyingRemote = true;
+      state.tasks = localGuest;
+      applyingRemote = false;
+      await setDoc(
+        ref,
+        {
+          tasks: localGuest,
+          updatedAt: new Date().toISOString(),
+          email: user.email || "",
+        },
+        { merge: true }
+      );
+    } else {
+      applyingRemote = true;
+      state.tasks = cloudTasks;
+      applyingRemote = false;
+    }
+  }
+
+  render();
+
+  unsubTasks = onSnapshot(
+    ref,
+    (docSnap) => {
+      if (!docSnap.exists()) return;
+      const remote = Array.isArray(docSnap.data()?.tasks)
+        ? docSnap.data().tasks.map(normalizeTask)
+        : [];
+      applyingRemote = true;
+      state.tasks = remote;
+      applyingRemote = false;
+      render();
+    },
+    (err) => {
+      console.warn("Cloud sync error:", err);
+    }
+  );
 }
+
+function handleAuthUser(user) {
+  stopCloudSync();
+  if (user) {
+    state.user = { uid: user.uid, email: user.email || "" };
+    updateAccountUi();
+    startCloudSync(state.user).catch((e) => {
+      console.warn(e);
+      alert("Signed in, but could not load cloud tasks.");
+    });
+  } else {
+    state.user = null;
+    updateAccountUi();
+    loadLocalTasks();
+    render();
+  }
+}
+
+// —— Normalize / ids ——
 
 function normalizeTask(t) {
   return {
@@ -195,7 +374,6 @@ function startOfDay(d) {
 
 function parseDue(due) {
   if (!due) return null;
-  // Treat date-only as local midnight
   if (/^\d{4}-\d{2}-\d{2}$/.test(due)) {
     const [y, m, day] = due.split("-").map(Number);
     return new Date(y, m - 1, day);
@@ -219,6 +397,57 @@ function formatDue(due) {
     s += ` ${String(h).padStart(2, "0")}:${min} ${ampm}`;
   }
   return s;
+}
+
+function formatLocalDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatLocalDateTime(d) {
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${formatLocalDate(d)}T${h}:${min}`;
+}
+
+/** Add one calendar day; keep time if present. No due → tomorrow (date only). */
+function addOneDayToDue(due) {
+  if (!due) {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return formatLocalDate(d);
+  }
+  const keepTime = due.includes("T") && due.length > 10;
+  const d = parseDue(due);
+  if (!d) {
+    const n = new Date();
+    n.setDate(n.getDate() + 1);
+    return formatLocalDate(n);
+  }
+  d.setDate(d.getDate() + 1);
+  if (keepTime) {
+    const timePart = due.split("T")[1].slice(0, 5);
+    return `${formatLocalDate(d)}T${timePart}`;
+  }
+  return formatLocalDate(d);
+}
+
+function deferTaskOneDay(id) {
+  const t = state.tasks.find((x) => x.id === id);
+  if (!t || t.done) return;
+  t.due = addOneDayToDue(t.due);
+  saveTasks();
+  render();
+}
+
+function setTaskDueToNow(id) {
+  const t = state.tasks.find((x) => x.id === id);
+  if (!t || t.done) return;
+  t.due = formatLocalDateTime(new Date());
+  saveTasks();
+  render();
 }
 
 function isOverdue(task) {
@@ -258,16 +487,15 @@ function visibleTasks() {
     );
   }
   list.sort((a, b) => {
-    if (state.sort === "title") return a.title.localeCompare(b.title);
     const da = parseDue(a.due)?.getTime() ?? Infinity;
     const db = parseDue(b.due)?.getTime() ?? Infinity;
     if (da !== db) return da - db;
-    return a.title.localeCompare(b.title);
+    return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
   });
   return list;
 }
 
-// —— Icons (inline SVG) ——
+// —— Icons ——
 
 const ICONS = {
   empty:
@@ -313,8 +541,6 @@ function render() {
 function renderCard(t, forceOverdueStyle) {
   const dueLabel = formatDue(t.due);
   const overdue = forceOverdueStyle || isOverdue(t);
-  const open = state.expanded.has(t.id);
-  const hasDetails = Boolean(t.notes) || t.total > 0;
 
   let meta = "";
   if (dueLabel) {
@@ -325,36 +551,21 @@ function renderCard(t, forceOverdueStyle) {
   }
 
   return `
-    <article class="task-card" data-id="${t.id}">
-      <div class="task-row${t.done ? " done" : ""}">
-        <button type="button" class="check${t.done ? " checked" : ""}" data-action="toggle" aria-label="Mark complete">
-          ${t.done ? ICONS.checked : ICONS.empty}
-        </button>
-        <div class="task-body" data-action="edit">
-          <p class="task-title">${escapeHtml(t.title)}</p>
-          ${meta ? `<div class="task-meta">${meta}</div>` : ""}
+    <div class="task-card-wrap" data-id="${t.id}">
+      <div class="task-swipe-label">Set to now</div>
+      <article class="task-card" data-id="${t.id}">
+        <div class="task-row${t.done ? " done" : ""}">
+          <button type="button" class="check${t.done ? " checked" : ""}" data-action="toggle" aria-label="Mark complete">
+            ${t.done ? ICONS.checked : ICONS.empty}
+          </button>
+          <div class="task-body" data-action="edit">
+            <p class="task-title">${escapeHtml(t.title)}</p>
+            ${meta ? `<div class="task-meta">${meta}</div>` : ""}
+          </div>
+          <button type="button" class="defer-btn" data-action="defer" aria-label="Postpone one day">${ICONS.chev}</button>
         </div>
-        ${
-          hasDetails
-            ? `<button type="button" class="expand-btn${open ? " open" : ""}" data-action="expand" aria-label="Expand">${ICONS.chev}</button>`
-            : `<button type="button" class="expand-btn" data-action="expand" aria-label="More">${ICONS.chev}</button>`
-        }
-      </div>
-      <div class="task-details" ${open ? "" : "hidden"}>
-        ${t.notes ? escapeHtml(t.notes) : "<em>No notes</em>"}
-        ${
-          t.total > 0
-            ? `<div class="task-details-actions">
-                <button type="button" class="chip-btn" data-action="bump">+1 progress (${t.progress}/${t.total})</button>
-              </div>`
-            : ""
-        }
-        <div class="task-details-actions">
-          <button type="button" class="chip-btn" data-action="edit">Edit</button>
-          <button type="button" class="chip-btn danger" data-action="delete">Delete</button>
-        </div>
-      </div>
-    </article>`;
+      </article>
+    </div>`;
 }
 
 function escapeHtml(s) {
@@ -369,12 +580,14 @@ function escapeHtml(s) {
 
 function openDialog(task) {
   const dlg = document.getElementById("task-dialog");
+  const deleteBtn = document.getElementById("btn-dialog-delete");
   document.getElementById("dialog-title").textContent = task ? "Edit task" : "New task";
   document.getElementById("field-id").value = task?.id || "";
   document.getElementById("field-title").value = task?.title || "";
   document.getElementById("field-notes").value = task?.notes || "";
   document.getElementById("field-progress").value = String(task?.progress ?? 0);
   document.getElementById("field-total").value = String(task?.total ?? 0);
+  deleteBtn.hidden = !task;
 
   let date = "";
   let time = "";
@@ -435,18 +648,95 @@ function toggleDone(id) {
 function deleteTask(id) {
   if (!confirm("Delete this task?")) return;
   state.tasks = state.tasks.filter((t) => t.id !== id);
-  state.expanded.delete(id);
   saveTasks();
   render();
 }
 
-function bumpProgress(id) {
-  const t = state.tasks.find((x) => x.id === id);
-  if (!t || t.total <= 0) return;
-  t.progress = Math.min(t.total, t.progress + 1);
-  if (t.progress >= t.total) t.done = true;
-  saveTasks();
-  render();
+// —— Auth UI ——
+
+function openAuthDialog(mode = "signin") {
+  if (!isFirebaseConfigured() || !auth) {
+    alert(
+      "Cloud sync is not set up yet.\n\nAdd your Firebase config to firebase-config.js (see README)."
+    );
+    return;
+  }
+  document.getElementById("auth-error").hidden = true;
+  document.getElementById("auth-error").textContent = "";
+  document.getElementById("auth-email").value = "";
+  document.getElementById("auth-password").value = "";
+  document.getElementById("auth-dialog-title").textContent = mode === "signup" ? "Sign up" : "Sign in";
+  document.getElementById("btn-auth-signin").hidden = mode === "signup";
+  document.getElementById("btn-auth-signup").hidden = mode === "signin";
+  if (mode === "signup") {
+    document.getElementById("auth-password").autocomplete = "new-password";
+  } else {
+    document.getElementById("auth-password").autocomplete = "current-password";
+  }
+  document.getElementById("auth-dialog").showModal();
+  document.getElementById("auth-email").focus();
+}
+
+function closeAuthDialog() {
+  document.getElementById("auth-dialog").close();
+}
+
+function authErrorMessage(err) {
+  const code = err?.code || "";
+  if (code === "auth/email-already-in-use") return "That email already has an account. Sign in instead.";
+  if (code === "auth/invalid-email") return "Enter a valid email address.";
+  if (code === "auth/weak-password") return "Password must be at least 6 characters.";
+  if (code === "auth/user-not-found" || code === "auth/wrong-password" || code === "auth/invalid-credential")
+    return "Wrong email or password.";
+  if (code === "auth/too-many-requests") return "Too many attempts. Try again later.";
+  return err?.message || "Something went wrong.";
+}
+
+function showAuthError(err) {
+  const el = document.getElementById("auth-error");
+  el.textContent = authErrorMessage(err);
+  el.hidden = false;
+}
+
+async function doSignIn(e) {
+  e.preventDefault();
+  if (!auth) return;
+  const email = document.getElementById("auth-email").value.trim();
+  const password = document.getElementById("auth-password").value;
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+    closeAuthDialog();
+    closeDrawer();
+  } catch (err) {
+    showAuthError(err);
+  }
+}
+
+async function doSignUp() {
+  if (!auth) return;
+  const email = document.getElementById("auth-email").value.trim();
+  const password = document.getElementById("auth-password").value;
+  if (!email || password.length < 6) {
+    showAuthError({ message: "Enter email and a password of at least 6 characters." });
+    return;
+  }
+  try {
+    await createUserWithEmailAndPassword(auth, email, password);
+    closeAuthDialog();
+    closeDrawer();
+  } catch (err) {
+    showAuthError(err);
+  }
+}
+
+async function doSignOut() {
+  if (!auth) return;
+  try {
+    await signOut(auth);
+    closeDrawer();
+  } catch (err) {
+    alert("Could not sign out: " + (err.message || err));
+  }
 }
 
 // —— UI chrome ——
@@ -542,6 +832,24 @@ function bindEvents() {
     if (file) importFile(file);
   });
 
+  document.getElementById("btn-sign-in").addEventListener("click", () => {
+    closeDrawer();
+    openAuthDialog("signin");
+  });
+  document.getElementById("btn-sign-up").addEventListener("click", () => {
+    closeDrawer();
+    openAuthDialog("signup");
+  });
+  document.getElementById("btn-sign-out").addEventListener("click", doSignOut);
+  document.getElementById("btn-auth-cancel").addEventListener("click", closeAuthDialog);
+  document.getElementById("btn-auth-signup").addEventListener("click", doSignUp);
+  document.getElementById("auth-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const title = document.getElementById("auth-dialog-title").textContent;
+    if (title === "Sign up") doSignUp();
+    else doSignIn(e);
+  });
+
   document.querySelectorAll(".drawer-item[data-filter]").forEach((btn) => {
     btn.addEventListener("click", () => {
       state.filter = btn.getAttribute("data-filter");
@@ -556,9 +864,16 @@ function bindEvents() {
   document.getElementById("btn-dialog-cancel").addEventListener("click", () => {
     document.getElementById("task-dialog").close();
   });
+  document.getElementById("btn-dialog-delete").addEventListener("click", () => {
+    const id = document.getElementById("field-id").value;
+    if (!id) return;
+    document.getElementById("task-dialog").close();
+    deleteTask(id);
+  });
   document.getElementById("task-form").addEventListener("submit", saveFromForm);
 
-  document.getElementById("task-list").addEventListener("click", (e) => {
+  const listEl = document.getElementById("task-list");
+  listEl.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-action]");
     const card = e.target.closest(".task-card");
     if (!card) return;
@@ -567,23 +882,105 @@ function bindEvents() {
     if (!action) return;
     e.stopPropagation();
     if (action === "toggle") toggleDone(id);
-    else if (action === "expand") {
-      if (state.expanded.has(id)) state.expanded.delete(id);
-      else state.expanded.add(id);
-      render();
-    } else if (action === "edit") {
+    else if (action === "defer") deferTaskOneDay(id);
+    else if (action === "edit") {
       const t = state.tasks.find((x) => x.id === id);
       if (t) openDialog(t);
-    } else if (action === "delete") deleteTask(id);
-    else if (action === "bump") bumpProgress(id);
+    }
   });
+
+  bindSwipe(listEl);
+}
+
+/** Swipe right on a task card → set due to now (local date + time). */
+function bindSwipe(listEl) {
+  const THRESHOLD = 72;
+  /** @type {{ wrap: HTMLElement, card: HTMLElement, id: string, x0: number, y0: number, dx: number, active: boolean } | null} */
+  let gesture = null;
+
+  function resetCard(card, wrap) {
+    card.style.transition = "transform 0.2s ease";
+    card.style.transform = "";
+    wrap?.classList.remove("swiping");
+  }
+
+  listEl.addEventListener(
+    "touchstart",
+    (e) => {
+      const card = e.target.closest(".task-card");
+      if (!card || e.target.closest("[data-action='toggle'], [data-action='defer']")) {
+        gesture = null;
+        return;
+      }
+      const wrap = card.closest(".task-card-wrap");
+      if (!wrap) return;
+      const t = e.changedTouches[0];
+      gesture = {
+        wrap,
+        card,
+        id: card.getAttribute("data-id") || "",
+        x0: t.clientX,
+        y0: t.clientY,
+        dx: 0,
+        active: false,
+      };
+      card.style.transition = "none";
+    },
+    { passive: true }
+  );
+
+  listEl.addEventListener(
+    "touchmove",
+    (e) => {
+      if (!gesture) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - gesture.x0;
+      const dy = t.clientY - gesture.y0;
+      if (!gesture.active) {
+        if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 8) {
+          gesture = null;
+          return;
+        }
+        if (dx > 10) gesture.active = true;
+        else return;
+      }
+      gesture.dx = Math.max(0, dx);
+      const pull = Math.min(gesture.dx, 120);
+      gesture.card.style.transform = `translateX(${pull}px)`;
+      if (pull > 24) gesture.wrap.classList.add("swiping");
+      else gesture.wrap.classList.remove("swiping");
+    },
+    { passive: true }
+  );
+
+  function endSwipe() {
+    if (!gesture) return;
+    const { card, wrap, id, dx, active } = gesture;
+    gesture = null;
+    if (active && dx >= THRESHOLD) {
+      resetCard(card, wrap);
+      setTaskDueToNow(id);
+      return;
+    }
+    resetCard(card, wrap);
+  }
+
+  listEl.addEventListener("touchend", endSwipe, { passive: true });
+  listEl.addEventListener("touchcancel", endSwipe, { passive: true });
 }
 
 // —— Boot ——
 
-loadTasks();
 bindEvents();
+updateAccountUi();
+loadLocalTasks();
 render();
+
+if (initFirebase() && auth) {
+  onAuthStateChanged(auth, (user) => {
+    handleAuthUser(user);
+  });
+}
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
