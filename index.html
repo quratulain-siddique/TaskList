@@ -91,21 +91,27 @@
         Title
         <textarea id="field-title" required maxlength="300" rows="1" placeholder="What needs doing?"></textarea>
       </label>
-      <div class="row-2">
-        <label>
-          Due date
-          <input type="date" id="field-date" />
-        </label>
-        <label>
-          Time
-          <input type="time" id="field-time" />
-        </label>
-      </div>
       <div class="subtasks-block">
         <span class="subtasks-label">Sub tasks</span>
         <ul class="subtask-list" id="subtask-list"></ul>
         <p class="subtasks-empty" id="subtasks-empty">No sub tasks yet.</p>
         <button type="button" class="btn-add-subtask" id="btn-add-subtask">+ Add</button>
+      </div>
+      <div class="due-block">
+        <div class="due-head">
+          <span class="due-label">Due</span>
+          <button type="button" class="btn-next-month" id="btn-next-month" title="Move due date one month ahead">+1 month</button>
+        </div>
+        <div class="row-2">
+          <label>
+            Due date
+            <input type="date" id="field-date" />
+          </label>
+          <label>
+            Time
+            <input type="time" id="field-time" />
+          </label>
+        </div>
       </div>
       <div class="dialog-actions">
         <button type="button" class="btn-danger" id="btn-dialog-delete" hidden>Delete</button>

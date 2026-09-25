@@ -324,6 +324,31 @@ function formatDue(due) {
   return s;
 }
 
+function addOneMonthToDateField() {
+  const dateEl = document.getElementById("field-date");
+  let y;
+  let m;
+  let day;
+  if (dateEl.value && /^\d{4}-\d{2}-\d{2}$/.test(dateEl.value)) {
+    [y, m, day] = dateEl.value.split("-").map(Number);
+  } else {
+    const now = new Date();
+    y = now.getFullYear();
+    m = now.getMonth() + 1;
+    day = now.getDate();
+  }
+  // Move to same day next month; clamp if that month is shorter (e.g. 31 Oct → 30 Nov)
+  let ny = y;
+  let nm = m + 1;
+  if (nm > 12) {
+    nm = 1;
+    ny += 1;
+  }
+  const lastDay = new Date(ny, nm, 0).getDate();
+  const nd = Math.min(day, lastDay);
+  dateEl.value = `${ny}-${String(nm).padStart(2, "0")}-${String(nd).padStart(2, "0")}`;
+}
+
 function formatLocalDate(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -922,6 +947,7 @@ function bindEvents() {
   });
   document.getElementById("field-title").addEventListener("input", autosizeTitleField);
   document.getElementById("btn-add-subtask").addEventListener("click", addDialogSubtask);
+  document.getElementById("btn-next-month").addEventListener("click", addOneMonthToDateField);
   document.getElementById("subtask-list").addEventListener("click", (e) => {
     const btn = e.target.closest("[data-action='toggle-sub']");
     if (!btn) return;

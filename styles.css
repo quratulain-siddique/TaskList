@@ -263,7 +263,12 @@ body {
   line-height: 1.4;
   word-wrap: break-word;
   overflow-wrap: anywhere;
-  white-space: pre-wrap;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 
 .task-meta {
@@ -776,6 +781,40 @@ iframe[src*="netlify"],
   .row-2 {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+.due-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.due-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.due-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.btn-next-month {
+  border: 0;
+  background: transparent;
+  color: var(--yellow-dark);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 2px;
+}
+
+.btn-next-month:active {
+  opacity: 0.7;
 }
 
 .subtasks-block {
