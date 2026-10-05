@@ -67,7 +67,7 @@
       </section>
       <section class="drawer-section">
         <h2 class="drawer-section-title">Overview</h2>
-        <button type="button" class="drawer-item drawer-subitem active" data-filter="all">All tasks</button>
+        <button type="button" class="drawer-item drawer-subitem active" data-filter="all" id="nav-all-tasks">All tasks</button>
       </section>
     </nav>
   </aside>
@@ -78,45 +78,56 @@
     <button type="button" role="menuitem" id="menu-clear-done">Clear completed</button>
   </div>
 
-  <!-- Add / Edit dialog -->
-  <dialog class="sheet" id="task-dialog">
-    <form id="task-form">
-      <div class="dialog-header">
-        <h2 id="dialog-title">New task</h2>
-        <button type="button" class="dialog-close" id="btn-dialog-close" aria-label="Close">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+  <!-- Add / Edit task — full screen -->
+  <dialog class="task-editor" id="task-dialog">
+    <form id="task-form" class="task-editor-form">
+      <header class="task-editor-bar">
+        <button type="button" class="icon-btn" id="btn-dialog-close" aria-label="Back">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
         </button>
-      </div>
-      <label>
-        Title
-        <textarea id="field-title" required maxlength="300" rows="1" placeholder="What needs doing?"></textarea>
-      </label>
-      <div class="subtasks-block">
-        <span class="subtasks-label">Sub tasks</span>
-        <ul class="subtask-list" id="subtask-list"></ul>
-        <p class="subtasks-empty" id="subtasks-empty">No sub tasks yet.</p>
-        <button type="button" class="btn-add-subtask" id="btn-add-subtask">+ Add</button>
-      </div>
-      <div class="due-block">
-        <div class="due-head">
-          <span class="due-label">Due</span>
-          <button type="button" class="btn-next-month" id="btn-next-month" title="Move due date one month ahead">+1 month</button>
+        <h2 id="dialog-title" class="task-editor-title">New Task</h2>
+        <button type="button" class="icon-btn" id="btn-dialog-delete" hidden aria-label="Delete">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+        </button>
+        <span class="task-editor-bar-spacer" id="btn-dialog-delete-spacer"></span>
+      </header>
+
+      <div class="task-editor-body">
+        <div class="title-field-wrap">
+          <span class="title-field-label">What needs to be done?</span>
+          <textarea id="field-title" required maxlength="300" rows="1" placeholder="Task title"></textarea>
         </div>
-        <div class="row-2">
-          <label>
-            Due date
+
+        <section class="editor-section">
+          <h3 class="editor-section-label">Subtasks</h3>
+          <ul class="subtask-list" id="subtask-list"></ul>
+          <p class="subtasks-empty" id="subtasks-empty">No sub tasks yet.</p>
+          <button type="button" class="editor-link-btn" id="btn-add-subtask">
+            <span class="editor-link-plus">+</span> Add subtask
+          </button>
+        </section>
+
+        <section class="editor-section">
+          <h3 class="editor-section-label">Due date</h3>
+          <label class="editor-field-row">
+            <span class="editor-field-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/></svg>
+            </span>
             <input type="date" id="field-date" />
           </label>
-          <label>
-            Time
+          <label class="editor-field-row">
+            <span class="editor-field-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg>
+            </span>
             <input type="time" id="field-time" />
           </label>
-        </div>
+          <button type="button" class="btn-plus-7days" id="btn-plus-7days" title="Set due date 7 days ahead and save">+7 days</button>
+        </section>
       </div>
-      <div class="dialog-actions">
-        <button type="button" class="btn-danger" id="btn-dialog-delete" hidden>Delete</button>
-        <button type="submit" class="btn-primary" id="btn-dialog-save">Save</button>
-      </div>
+
+      <button type="submit" class="fab fab-save" id="btn-dialog-save" aria-label="Save task">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+      </button>
       <input type="hidden" id="field-id" />
     </form>
   </dialog>

@@ -23,7 +23,7 @@ import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
 const STORAGE_KEY = "my-tasks-v1";
 
 /** @typedef {{ id: string, title: string, done: boolean }} Subtask */
-/** @typedef {{ id: string, title: string, due: string|null, done: boolean, progress: number, total: number, notes: string, subtasks: Subtask[] }} Task */
+/** @typedef {{ id: string, title: string, due: string|null, done: boolean, progress: number, total: number, notes: string, subtasks: Subtask[], updatedAt?: string }} Task */
 
 const state = {
   tasks: /** @type {Task[]} */ ([]),
@@ -104,18 +104,86 @@ function maybeDailyReplicaCheck() {
   markReplicaCheckedToday();
 }
 
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function mergeSubtaskLists(a, b) {
+  const byId = new Map();
+  const order = [];
+  for (const raw of [...(a || []), ...(b || [])]) {
+    const s = normalizeSubtask(raw);
+    if (!s.id) continue;
+    if (!byId.has(s.id)) {
+      byId.set(s.id, s);
+      order.push(s.id);
+    } else {
+      const prev = byId.get(s.id);
+      byId.set(s.id, {
+        id: s.id,
+        title: s.title || prev.title,
+        done: Boolean(s.done || prev.done),
+      });
+    }
+  }
+  return order.map((id) => byId.get(id));
+}
+
+/** Deep-merge one task: union subtasks; scalars from newer updatedAt (local wins ties). */
+function mergeTwoTasks(cloud, local) {
+  const c = normalizeTask(cloud);
+  const l = normalizeTask(local);
+  const cTime = Date.parse(c.updatedAt || "") || 0;
+  const lTime = Date.parse(l.updatedAt || "") || 0;
+  const newer = lTime >= cTime ? l : c;
+  const older = newer === l ? c : l;
+  return normalizeTask({
+    id: c.id || l.id,
+    title: newer.title || older.title,
+    due: newer.due !== undefined && newer.due !== null ? newer.due : older.due,
+    done: newer.done,
+    progress: newer.progress,
+    total: newer.total,
+    notes: newer.notes || older.notes,
+    subtasks: mergeSubtaskLists(c.subtasks, l.subtasks),
+    updatedAt: newer.updatedAt || older.updatedAt || nowIso(),
+  });
+}
+
 /**
- * Account tasks win on the same id; local-only tasks are appended.
+ * Merge by task id. Local-only tasks are added.
+ * Same id → deep merge (keeps local subtasks cloud is missing).
  */
 function mergeTaskLists(cloudTasks, localTasks) {
   const byId = new Map();
-  for (const t of cloudTasks) byId.set(t.id, normalizeTask(t));
-  for (const t of localTasks) {
+  for (const t of cloudTasks || []) {
+    const n = normalizeTask(t);
+    byId.set(n.id, n);
+  }
+  for (const t of localTasks || []) {
     const n = normalizeTask(t);
     if (!byId.has(n.id)) byId.set(n.id, n);
+    else byId.set(n.id, mergeTwoTasks(byId.get(n.id), n));
   }
   return Array.from(byId.values());
 }
+
+function tasksFingerprint(tasks) {
+  return JSON.stringify(
+    (tasks || [])
+      .map((t) => ({
+        id: t.id,
+        title: t.title,
+        due: t.due,
+        done: t.done,
+        updatedAt: t.updatedAt || "",
+        subtasks: (t.subtasks || []).map((s) => ({ id: s.id, title: s.title, done: s.done })),
+      }))
+      .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+  );
+}
+
+let cloudPushTimer = null;
 
 async function saveTasksCloud() {
   if (!state.user || !db || applyingRemote) return;
@@ -124,26 +192,38 @@ async function saveTasksCloud() {
       userDocRef(state.user.uid),
       {
         tasks: state.tasks,
-        updatedAt: new Date().toISOString(),
+        updatedAt: nowIso(),
         email: state.user.email,
       },
       { merge: true }
     );
   } catch (e) {
-    console.warn("Cloud save failed:", e);
-    alert("Could not sync to the cloud. Check your connection.");
+    console.warn("Cloud save failed (will retry when online):", e);
+    if (navigator.onLine) {
+      // Avoid noisy alerts while offline; only warn when we think we're online
+      console.warn(e);
+    }
   }
+}
+
+function scheduleCloudPush() {
+  if (!state.user || applyingRemote) return;
+  clearTimeout(cloudPushTimer);
+  cloudPushTimer = setTimeout(() => {
+    saveTasksCloud();
+  }, 300);
 }
 
 /**
  * Persist: always write localStorage. When signed in, also write Firestore.
- * Local stays an account replica so logout still has the synced list.
  */
 function saveTasks() {
+  // Ensure every task/subtask has an id before persist
+  state.tasks = state.tasks.map((t) => normalizeTask(t));
   writeLocalReplica(state.tasks);
   if (state.user) {
     markReplicaCheckedToday();
-    saveTasksCloud();
+    scheduleCloudPush();
   }
 }
 
@@ -156,6 +236,8 @@ function loadLocalTasks() {
     }
     const parsed = JSON.parse(raw);
     state.tasks = Array.isArray(parsed) ? parsed.map(normalizeTask) : [];
+    // Persist so newly assigned ids stay stable across reloads/merges
+    writeLocalReplica(state.tasks);
   } catch {
     state.tasks = [];
   }
@@ -180,33 +262,53 @@ function setLoading(on, message = "Loading tasks…") {
   el.hidden = !on;
 }
 
+function applyMergedTasks(merged, { pushIfNeeded = false, remoteFingerprint = null } = {}) {
+  applyingRemote = true;
+  state.tasks = merged.map(normalizeTask);
+  writeLocalReplica(state.tasks);
+  markReplicaCheckedToday();
+  applyingRemote = false;
+  setLoading(false);
+  render();
+  if (pushIfNeeded && state.user) {
+    const nextFp = tasksFingerprint(state.tasks);
+    if (remoteFingerprint === null || nextFp !== remoteFingerprint) {
+      scheduleCloudPush();
+    }
+  }
+}
+
 async function startCloudSync(user) {
   stopCloudSync();
+  // Always show local list first (works offline)
+  loadLocalTasks();
+  render();
+
+  if (!navigator.onLine) {
+    setLoading(false);
+    return;
+  }
+
   setLoading(true, "Syncing tasks…");
   try {
     const ref = userDocRef(user.uid);
     const snap = await getDoc(ref);
-    const localGuest = readLocalTasksSnapshot();
+    const localTasks = readLocalTasksSnapshot();
     const cloudTasks =
       snap.exists() && Array.isArray(snap.data()?.tasks)
         ? snap.data().tasks.map(normalizeTask)
         : [];
 
-    // Merge guest/local-only tasks into the account, then use that as the source of truth
-    const merged = mergeTaskLists(cloudTasks, localGuest);
+    const merged = mergeTaskLists(cloudTasks, localTasks);
+    const remoteFp = tasksFingerprint(cloudTasks);
+    applyMergedTasks(merged, { pushIfNeeded: true, remoteFingerprint: remoteFp });
 
-    applyingRemote = true;
-    state.tasks = merged;
-    writeLocalReplica(merged);
-    markReplicaCheckedToday();
-    applyingRemote = false;
-    render();
-
+    // Ensure cloud has the merged set (creates missing tasks / subtasks)
     await setDoc(
       ref,
       {
-        tasks: merged,
-        updatedAt: new Date().toISOString(),
+        tasks: state.tasks,
+        updatedAt: nowIso(),
         email: user.email || "",
       },
       { merge: true }
@@ -219,22 +321,25 @@ async function startCloudSync(user) {
         const remote = Array.isArray(docSnap.data()?.tasks)
           ? docSnap.data().tasks.map(normalizeTask)
           : [];
-        applyingRemote = true;
-        state.tasks = remote;
-        writeLocalReplica(remote);
-        markReplicaCheckedToday();
-        applyingRemote = false;
-        setLoading(false);
-        render();
+        // Merge remote with current local so offline edits / richer local subtasks are kept
+        const localNow = readLocalTasksSnapshot();
+        const next = mergeTaskLists(remote, localNow);
+        const rFp = tasksFingerprint(remote);
+        applyMergedTasks(next, { pushIfNeeded: true, remoteFingerprint: rFp });
       },
       (err) => {
         console.warn("Cloud sync error:", err);
         setLoading(false);
+        // Keep showing local
+        loadLocalTasks();
+        render();
       }
     );
   } catch (e) {
+    console.warn("Cloud sync unavailable, using local tasks:", e);
     setLoading(false);
-    throw e;
+    loadLocalTasks();
+    render();
   }
 }
 
@@ -243,14 +348,16 @@ function handleAuthUser(user) {
   if (user) {
     state.user = { uid: user.uid, email: user.email || "" };
     updateAccountUi();
-    setLoading(true, "Loading tasks…");
+    // Show local immediately, then sync when possible
+    loadLocalTasks();
+    render();
     startCloudSync(state.user).catch((e) => {
       console.warn(e);
       setLoading(false);
-      alert("Signed in, but could not load cloud tasks.");
+      loadLocalTasks();
+      render();
     });
   } else {
-    // Local already holds last account replica (or prior guest list)
     state.user = null;
     updateAccountUi();
     loadLocalTasks();
@@ -259,29 +366,40 @@ function handleAuthUser(user) {
   }
 }
 
+function syncWhenOnline() {
+  if (!navigator.onLine || !state.user) return;
+  startCloudSync(state.user).catch((e) => console.warn(e));
+}
+
 // —— Normalize / ids ——
 
 function normalizeSubtask(s) {
+  const title = String(s?.title || "").trim();
+  let id = s?.id != null && String(s.id) ? String(s.id) : "";
+  if (!id && title) {
+    id = "st_" + title.toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 48);
+  }
+  if (!id) id = uid();
   return {
-    id: String(s?.id || uid()),
-    title: String(s?.title || "").trim(),
+    id,
+    title,
     done: Boolean(s?.done),
   };
 }
 
 function normalizeTask(t) {
-  const subtasks = Array.isArray(t.subtasks)
-    ? t.subtasks.map(normalizeSubtask)
-    : [];
+  const id = String(t?.id || uid());
+  const subtasks = Array.isArray(t?.subtasks) ? t.subtasks.map(normalizeSubtask) : [];
   return {
-    id: String(t.id || uid()),
-    title: String(t.title || "").trim() || "Untitled",
-    due: t.due ? String(t.due) : null,
-    done: Boolean(t.done),
-    progress: Math.max(0, Number(t.progress) || 0),
-    total: Math.max(0, Number(t.total) || 0),
-    notes: String(t.notes || ""),
+    id,
+    title: String(t?.title || "").trim() || "Untitled",
+    due: t?.due ? String(t.due) : null,
+    done: Boolean(t?.done),
+    progress: Math.max(0, Number(t?.progress) || 0),
+    total: Math.max(0, Number(t?.total) || 0),
+    notes: String(t?.notes || ""),
     subtasks,
+    updatedAt: t?.updatedAt ? String(t.updatedAt) : "",
   };
 }
 
@@ -324,29 +442,18 @@ function formatDue(due) {
   return s;
 }
 
-function addOneMonthToDateField() {
+function addSevenDaysToDateFieldAndSave() {
   const dateEl = document.getElementById("field-date");
-  let y;
-  let m;
-  let day;
+  let base;
   if (dateEl.value && /^\d{4}-\d{2}-\d{2}$/.test(dateEl.value)) {
-    [y, m, day] = dateEl.value.split("-").map(Number);
+    const [y, m, day] = dateEl.value.split("-").map(Number);
+    base = new Date(y, m - 1, day);
   } else {
-    const now = new Date();
-    y = now.getFullYear();
-    m = now.getMonth() + 1;
-    day = now.getDate();
+    base = new Date();
   }
-  // Move to same day next month; clamp if that month is shorter (e.g. 31 Oct → 30 Nov)
-  let ny = y;
-  let nm = m + 1;
-  if (nm > 12) {
-    nm = 1;
-    ny += 1;
-  }
-  const lastDay = new Date(ny, nm, 0).getDate();
-  const nd = Math.min(day, lastDay);
-  dateEl.value = `${ny}-${String(nm).padStart(2, "0")}-${String(nd).padStart(2, "0")}`;
+  base.setDate(base.getDate() + 7);
+  dateEl.value = formatLocalDate(base);
+  saveFromForm(new Event("submit", { cancelable: true }));
 }
 
 function formatLocalDate(d) {
@@ -388,6 +495,7 @@ function deferTaskOneDay(id) {
   const t = state.tasks.find((x) => x.id === id);
   if (!t || t.done) return;
   t.due = addOneDayToDue(t.due);
+  t.updatedAt = nowIso();
   saveTasks();
   render();
 }
@@ -396,6 +504,7 @@ function setTaskDueToNow(id) {
   const t = state.tasks.find((x) => x.id === id);
   if (!t || t.done) return;
   t.due = formatLocalDateTime(new Date());
+  t.updatedAt = nowIso();
   saveTasks();
   render();
 }
@@ -467,6 +576,8 @@ function render() {
   const listEl = document.getElementById("task-list");
   const emptyEl = document.getElementById("empty-state");
   const tasks = visibleTasks();
+  const allBtn = document.getElementById("nav-all-tasks");
+  if (allBtn) allBtn.textContent = `All tasks (${state.tasks.length})`;
 
   if (!tasks.length) {
     listEl.innerHTML = "";
@@ -577,6 +688,9 @@ function renderSubtaskList() {
       <button type="button" class="subtask-drag" data-action="drag-sub" aria-label="Drag to reorder" title="Drag to reorder">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M9 5h2v2H9V5zm4 0h2v2h-2V5zM9 11h2v2H9v-2zm4 0h2v2h-2v-2zM9 17h2v2H9v-2zm4 0h2v2h-2v-2z"/></svg>
       </button>
+      <button type="button" class="subtask-remove" data-action="remove-sub" aria-label="Remove sub task">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
     </li>`
     )
     .join("");
@@ -645,10 +759,12 @@ function onSubtaskPointerUp(e) {
 function openDialog(task) {
   const dlg = document.getElementById("task-dialog");
   const deleteBtn = document.getElementById("btn-dialog-delete");
-  document.getElementById("dialog-title").textContent = task ? "Edit task" : "New task";
+  const deleteSpacer = document.getElementById("btn-dialog-delete-spacer");
+  document.getElementById("dialog-title").textContent = task ? "Edit Task" : "New Task";
   document.getElementById("field-id").value = task?.id || "";
   document.getElementById("field-title").value = task?.title || "";
   deleteBtn.hidden = !task;
+  if (deleteSpacer) deleteSpacer.hidden = !!task;
 
   state.dialogSubtasks = (task?.subtasks || []).map(normalizeSubtask);
   renderSubtaskList();
@@ -693,6 +809,7 @@ function saveFromForm(e) {
     total: existing?.total ?? 0,
     notes: existing?.notes || "",
     subtasks: readDialogSubtasksFromDom(false),
+    updatedAt: nowIso(),
   });
 
   const idx = state.tasks.findIndex((t) => t.id === id);
@@ -708,6 +825,7 @@ function toggleDone(id) {
   const t = state.tasks.find((x) => x.id === id);
   if (!t) return;
   t.done = !t.done;
+  t.updatedAt = nowIso();
   saveTasks();
   render();
 }
@@ -947,12 +1065,44 @@ function bindEvents() {
   });
   document.getElementById("field-title").addEventListener("input", autosizeTitleField);
   document.getElementById("btn-add-subtask").addEventListener("click", addDialogSubtask);
-  document.getElementById("btn-next-month").addEventListener("click", addOneMonthToDateField);
+  document.getElementById("btn-plus-7days").addEventListener("click", addSevenDaysToDateFieldAndSave);
+  ["field-date", "field-time"].forEach((id) => {
+    const input = document.getElementById(id);
+    if (!input) return;
+    const openPicker = () => {
+      if (typeof input.showPicker === "function") {
+        try {
+          input.showPicker();
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+    input.addEventListener("click", openPicker);
+    input.closest(".editor-field-row")?.querySelector(".editor-field-icon")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      input.focus();
+      openPicker();
+    });
+  });
   document.getElementById("subtask-list").addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-action='toggle-sub']");
+    const btn = e.target.closest("[data-action]");
     if (!btn) return;
-    e.preventDefault();
-    btn.classList.toggle("done");
+    const action = btn.getAttribute("data-action");
+    if (action === "toggle-sub") {
+      e.preventDefault();
+      btn.classList.toggle("done");
+      return;
+    }
+    if (action === "remove-sub") {
+      e.preventDefault();
+      const item = btn.closest(".subtask-item");
+      if (!item) return;
+      item.remove();
+      state.dialogSubtasks = readDialogSubtasksFromDom(true).map(normalizeSubtask);
+      const empty = document.getElementById("subtasks-empty");
+      if (empty) empty.hidden = state.dialogSubtasks.length > 0;
+    }
   });
   document.getElementById("task-form").addEventListener("submit", saveFromForm);
 
@@ -1067,20 +1217,24 @@ function bindSwipe(listEl) {
 
 bindEvents();
 updateAccountUi();
+// Show local tasks immediately (works offline even while signed in)
+loadLocalTasks();
+render();
 
 if (initFirebase() && auth) {
-  // Wait for auth before showing tasks so we don't flash old guest list then account list
-  setLoading(true, "Loading tasks…");
+  setLoading(true, "Syncing tasks…");
   onAuthStateChanged(auth, (user) => {
     handleAuthUser(user);
   });
+  window.addEventListener("online", syncWhenOnline);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") maybeDailyReplicaCheck();
+    if (document.visibilityState === "visible") {
+      maybeDailyReplicaCheck();
+      if (navigator.onLine && state.user) syncWhenOnline();
+    }
   });
 } else {
-  loadLocalTasks();
   setLoading(false);
-  render();
 }
 
 if ("serviceWorker" in navigator) {
