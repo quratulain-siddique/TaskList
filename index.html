@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, interactive-widget=overlays-content" />
   <meta name="theme-color" content="#f1a820" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -66,8 +66,11 @@
         <button type="button" class="drawer-item drawer-subitem" id="btn-sign-out" hidden>Sign out</button>
       </section>
       <section class="drawer-section">
-        <h2 class="drawer-section-title">Overview</h2>
-        <button type="button" class="drawer-item drawer-subitem active" data-filter="all" id="nav-all-tasks">All tasks</button>
+        <div class="drawer-section-head">
+          <h2 class="drawer-section-title">Lists</h2>
+          <button type="button" class="drawer-add-btn" id="btn-add-list" aria-label="Add list" title="Add list">+</button>
+        </div>
+        <div id="drawer-lists"></div>
       </section>
     </nav>
   </aside>
@@ -129,6 +132,21 @@
         <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
       </button>
       <input type="hidden" id="field-id" />
+    </form>
+  </dialog>
+
+  <!-- New list dialog -->
+  <dialog class="sheet" id="list-dialog">
+    <form id="list-form">
+      <h2>New list</h2>
+      <label>
+        Name
+        <input type="text" id="list-name" required maxlength="60" autocomplete="off" placeholder="e.g. Shopping, Work" />
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn-ghost" id="btn-list-cancel">Cancel</button>
+        <button type="submit" class="btn-primary" id="btn-list-create">Create</button>
+      </div>
     </form>
   </dialog>
 

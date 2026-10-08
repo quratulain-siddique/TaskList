@@ -21,12 +21,17 @@ import {
 import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
 
 const STORAGE_KEY = "my-tasks-v1";
+const DEFAULT_LIST_ID = "default";
+const DEFAULT_LIST_NAME = "Task list";
 
 /** @typedef {{ id: string, title: string, done: boolean }} Subtask */
-/** @typedef {{ id: string, title: string, due: string|null, done: boolean, progress: number, total: number, notes: string, subtasks: Subtask[], updatedAt?: string }} Task */
+/** @typedef {{ id: string, name: string }} TaskList */
+/** @typedef {{ id: string, listId: string, title: string, due: string|null, done: boolean, progress: number, total: number, notes: string, subtasks: Subtask[], updatedAt?: string }} Task */
 
 const state = {
   tasks: /** @type {Task[]} */ ([]),
+  lists: /** @type {TaskList[]} */ ([{ id: DEFAULT_LIST_ID, name: DEFAULT_LIST_NAME }]),
+  activeListId: DEFAULT_LIST_ID,
   filter: "all", // all | active | done
   query: "",
   editingId: null,
@@ -85,8 +90,83 @@ function stopCloudSync() {
   }
 }
 
-function writeLocalReplica(tasks) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+function defaultLists() {
+  return [{ id: DEFAULT_LIST_ID, name: DEFAULT_LIST_NAME }];
+}
+
+function normalizeList(l) {
+  const id = String(l?.id || uid());
+  const name = String(l?.name || "").trim() || "Untitled list";
+  return { id, name };
+}
+
+function mergeNamedLists(cloudLists, localLists) {
+  const byId = new Map();
+  const order = [];
+  for (const raw of [...(cloudLists || []), ...(localLists || [])]) {
+    const n = normalizeList(raw);
+    if (!byId.has(n.id)) {
+      byId.set(n.id, n);
+      order.push(n.id);
+    } else {
+      byId.set(n.id, n);
+    }
+  }
+  if (!byId.has(DEFAULT_LIST_ID)) {
+    byId.set(DEFAULT_LIST_ID, { id: DEFAULT_LIST_ID, name: DEFAULT_LIST_NAME });
+    order.unshift(DEFAULT_LIST_ID);
+  }
+  return order.map((id) => byId.get(id));
+}
+
+function ensureActiveList() {
+  if (!state.lists.length) state.lists = defaultLists();
+  if (!state.lists.some((l) => l.id === state.activeListId)) {
+    state.activeListId = state.lists[0].id;
+  }
+}
+
+function activeList() {
+  ensureActiveList();
+  return state.lists.find((l) => l.id === state.activeListId) || state.lists[0];
+}
+
+function parseStorageRaw(raw) {
+  const parsed = JSON.parse(raw);
+  if (Array.isArray(parsed)) {
+    return {
+      lists: defaultLists(),
+      activeListId: DEFAULT_LIST_ID,
+      tasks: parsed.map((t) => normalizeTask({ ...t, listId: t.listId || DEFAULT_LIST_ID })),
+    };
+  }
+  if (parsed && typeof parsed === "object") {
+    const lists =
+      Array.isArray(parsed.lists) && parsed.lists.length
+        ? parsed.lists.map(normalizeList)
+        : defaultLists();
+    let activeListId = String(parsed.activeListId || lists[0].id);
+    if (!lists.some((l) => l.id === activeListId)) activeListId = lists[0].id;
+    const tasks = Array.isArray(parsed.tasks)
+      ? parsed.tasks.map((t) => normalizeTask(t))
+      : [];
+    return { lists, activeListId, tasks };
+  }
+  return { lists: defaultLists(), activeListId: DEFAULT_LIST_ID, tasks: [] };
+}
+
+function persistPayload() {
+  ensureActiveList();
+  return {
+    v: 2,
+    lists: state.lists.map(normalizeList),
+    activeListId: state.activeListId,
+    tasks: state.tasks.map(normalizeTask),
+  };
+}
+
+function writeLocalReplica() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(persistPayload()));
 }
 
 const REPLICA_CHECK_KEY = "my-tasks-replica-day";
@@ -100,7 +180,7 @@ function maybeDailyReplicaCheck() {
   if (!state.user) return;
   const today = formatLocalDate(new Date());
   if (localStorage.getItem(REPLICA_CHECK_KEY) === today) return;
-  writeLocalReplica(state.tasks);
+  writeLocalReplica();
   markReplicaCheckedToday();
 }
 
@@ -139,6 +219,7 @@ function mergeTwoTasks(cloud, local) {
   const older = newer === l ? c : l;
   return normalizeTask({
     id: c.id || l.id,
+    listId: newer.listId || older.listId || DEFAULT_LIST_ID,
     title: newer.title || older.title,
     due: newer.due !== undefined && newer.due !== null ? newer.due : older.due,
     done: newer.done,
@@ -168,19 +249,23 @@ function mergeTaskLists(cloudTasks, localTasks) {
   return Array.from(byId.values());
 }
 
-function tasksFingerprint(tasks) {
-  return JSON.stringify(
-    (tasks || [])
+function tasksFingerprint(tasks, lists) {
+  return JSON.stringify({
+    lists: (lists || [])
+      .map((l) => ({ id: l.id, name: l.name }))
+      .sort((a, b) => String(a.id).localeCompare(String(b.id))),
+    tasks: (tasks || [])
       .map((t) => ({
         id: t.id,
+        listId: t.listId || DEFAULT_LIST_ID,
         title: t.title,
         due: t.due,
         done: t.done,
         updatedAt: t.updatedAt || "",
         subtasks: (t.subtasks || []).map((s) => ({ id: s.id, title: s.title, done: s.done })),
       }))
-      .sort((a, b) => String(a.id).localeCompare(String(b.id)))
-  );
+      .sort((a, b) => String(a.id).localeCompare(String(b.id))),
+  });
 }
 
 let cloudPushTimer = null;
@@ -192,6 +277,7 @@ async function saveTasksCloud() {
       userDocRef(state.user.uid),
       {
         tasks: state.tasks,
+        lists: state.lists,
         updatedAt: nowIso(),
         email: state.user.email,
       },
@@ -220,7 +306,9 @@ function scheduleCloudPush() {
 function saveTasks() {
   // Ensure every task/subtask has an id before persist
   state.tasks = state.tasks.map((t) => normalizeTask(t));
-  writeLocalReplica(state.tasks);
+  state.lists = state.lists.map(normalizeList);
+  ensureActiveList();
+  writeLocalReplica();
   if (state.user) {
     markReplicaCheckedToday();
     scheduleCloudPush();
@@ -232,26 +320,38 @@ function loadLocalTasks() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       state.tasks = [];
+      state.lists = defaultLists();
+      state.activeListId = DEFAULT_LIST_ID;
       return;
     }
-    const parsed = JSON.parse(raw);
-    state.tasks = Array.isArray(parsed) ? parsed.map(normalizeTask) : [];
-    // Persist so newly assigned ids stay stable across reloads/merges
-    writeLocalReplica(state.tasks);
+    const data = parseStorageRaw(raw);
+    state.lists = data.lists;
+    state.activeListId = data.activeListId;
+    state.tasks = data.tasks;
+    ensureActiveList();
+    // Persist so newly assigned ids / migrated shape stay stable
+    writeLocalReplica();
   } catch {
     state.tasks = [];
+    state.lists = defaultLists();
+    state.activeListId = DEFAULT_LIST_ID;
+  }
+}
+
+function readLocalSnapshot() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return { lists: defaultLists(), activeListId: DEFAULT_LIST_ID, tasks: [] };
+    }
+    return parseStorageRaw(raw);
+  } catch {
+    return { lists: defaultLists(), activeListId: DEFAULT_LIST_ID, tasks: [] };
   }
 }
 
 function readLocalTasksSnapshot() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map(normalizeTask) : [];
-  } catch {
-    return [];
-  }
+  return readLocalSnapshot().tasks;
 }
 
 function setLoading(on, message = "Loading tasks…") {
@@ -262,25 +362,27 @@ function setLoading(on, message = "Loading tasks…") {
   el.hidden = !on;
 }
 
-function applyMergedTasks(merged, { pushIfNeeded = false, remoteFingerprint = null } = {}) {
+/** Apply Firebase state as source of truth; localStorage is only a cache. Never push local into cloud here. */
+function applyCloudState(cloudTasks, cloudLists) {
   applyingRemote = true;
-  state.tasks = merged.map(normalizeTask);
-  writeLocalReplica(state.tasks);
+  const prevActive = state.activeListId;
+  state.tasks = (cloudTasks || []).map(normalizeTask);
+  state.lists = (cloudLists?.length ? cloudLists : defaultLists()).map(normalizeList);
+  if (prevActive && state.lists.some((l) => l.id === prevActive)) {
+    state.activeListId = prevActive;
+  } else {
+    ensureActiveList();
+  }
+  writeLocalReplica();
   markReplicaCheckedToday();
   applyingRemote = false;
   setLoading(false);
   render();
-  if (pushIfNeeded && state.user) {
-    const nextFp = tasksFingerprint(state.tasks);
-    if (remoteFingerprint === null || nextFp !== remoteFingerprint) {
-      scheduleCloudPush();
-    }
-  }
 }
 
 async function startCloudSync(user) {
   stopCloudSync();
-  // Always show local list first (works offline)
+  // Show cached replica while offline / until cloud loads
   loadLocalTasks();
   render();
 
@@ -293,26 +395,26 @@ async function startCloudSync(user) {
   try {
     const ref = userDocRef(user.uid);
     const snap = await getDoc(ref);
-    const localTasks = readLocalTasksSnapshot();
     const cloudTasks =
       snap.exists() && Array.isArray(snap.data()?.tasks)
         ? snap.data().tasks.map(normalizeTask)
         : [];
+    const cloudLists =
+      snap.exists() && Array.isArray(snap.data()?.lists) && snap.data().lists.length
+        ? snap.data().lists.map(normalizeList)
+        : defaultLists();
 
-    const merged = mergeTaskLists(cloudTasks, localTasks);
-    const remoteFp = tasksFingerprint(cloudTasks);
-    applyMergedTasks(merged, { pushIfNeeded: true, remoteFingerprint: remoteFp });
+    // Signed in: Firebase only — do not merge localStorage back into the account
+    applyCloudState(cloudTasks, cloudLists);
 
-    // Ensure cloud has the merged set (creates missing tasks / subtasks)
-    await setDoc(
-      ref,
-      {
-        tasks: state.tasks,
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        tasks: [],
+        lists: defaultLists(),
         updatedAt: nowIso(),
         email: user.email || "",
-      },
-      { merge: true }
-    );
+      });
+    }
 
     unsubTasks = onSnapshot(
       ref,
@@ -321,22 +423,21 @@ async function startCloudSync(user) {
         const remote = Array.isArray(docSnap.data()?.tasks)
           ? docSnap.data().tasks.map(normalizeTask)
           : [];
-        // Merge remote with current local so offline edits / richer local subtasks are kept
-        const localNow = readLocalTasksSnapshot();
-        const next = mergeTaskLists(remote, localNow);
-        const rFp = tasksFingerprint(remote);
-        applyMergedTasks(next, { pushIfNeeded: true, remoteFingerprint: rFp });
+        const remoteLists =
+          Array.isArray(docSnap.data()?.lists) && docSnap.data().lists.length
+            ? docSnap.data().lists.map(normalizeList)
+            : defaultLists();
+        applyCloudState(remote, remoteLists);
       },
       (err) => {
         console.warn("Cloud sync error:", err);
         setLoading(false);
-        // Keep showing local
         loadLocalTasks();
         render();
       }
     );
   } catch (e) {
-    console.warn("Cloud sync unavailable, using local tasks:", e);
+    console.warn("Cloud sync unavailable, using local cache:", e);
     setLoading(false);
     loadLocalTasks();
     render();
@@ -348,7 +449,7 @@ function handleAuthUser(user) {
   if (user) {
     state.user = { uid: user.uid, email: user.email || "" };
     updateAccountUi();
-    // Show local immediately, then sync when possible
+    // Cache first for offline, then replace with Firebase (source of truth)
     loadLocalTasks();
     render();
     startCloudSync(state.user).catch((e) => {
@@ -390,8 +491,10 @@ function normalizeSubtask(s) {
 function normalizeTask(t) {
   const id = String(t?.id || uid());
   const subtasks = Array.isArray(t?.subtasks) ? t.subtasks.map(normalizeSubtask) : [];
+  const listId = String(t?.listId || DEFAULT_LIST_ID);
   return {
     id,
+    listId,
     title: String(t?.title || "").trim() || "Untitled",
     due: t?.due ? String(t.due) : null,
     done: Boolean(t?.done),
@@ -535,8 +638,13 @@ const SECTION_ORDER = ["No date", "Overdue", "Today", "Upcoming", "Completed"];
 
 // —— Filtering / sorting ——
 
+function tasksInActiveList() {
+  ensureActiveList();
+  return state.tasks.filter((t) => (t.listId || DEFAULT_LIST_ID) === state.activeListId);
+}
+
 function visibleTasks() {
-  let list = state.tasks.slice();
+  let list = tasksInActiveList();
   if (state.filter === "active") list = list.filter((t) => !t.done);
   if (state.filter === "done") list = list.filter((t) => t.done);
   if (state.query) {
@@ -572,12 +680,64 @@ const ICONS = {
 
 // —— Render ——
 
+function renderDrawerLists() {
+  const host = document.getElementById("drawer-lists");
+  if (!host) return;
+  ensureActiveList();
+  host.innerHTML = state.lists
+    .map((l) => {
+      const count = state.tasks.filter((t) => (t.listId || DEFAULT_LIST_ID) === l.id).length;
+      const active = l.id === state.activeListId ? " active" : "";
+      return `<button type="button" class="drawer-item drawer-subitem${active}" data-list-id="${escapeHtml(l.id)}">${escapeHtml(l.name)} (${count})</button>`;
+    })
+    .join("");
+}
+
+function setActiveList(listId) {
+  if (!state.lists.some((l) => l.id === listId)) return;
+  state.activeListId = listId;
+  saveTasks();
+  render();
+}
+
+function openListDialog() {
+  const dlg = document.getElementById("list-dialog");
+  const input = document.getElementById("list-name");
+  if (!dlg || !input) return;
+  input.value = "";
+  closeDrawer();
+  if (typeof dlg.showModal === "function") dlg.showModal();
+  else dlg.setAttribute("open", "");
+  setTimeout(() => input.focus(), 50);
+}
+
+function closeListDialog() {
+  const dlg = document.getElementById("list-dialog");
+  if (!dlg) return;
+  if (typeof dlg.close === "function") dlg.close();
+  else dlg.removeAttribute("open");
+}
+
+function submitListForm(e) {
+  e.preventDefault();
+  const input = document.getElementById("list-name");
+  const trimmed = (input?.value || "").trim();
+  if (!trimmed) return;
+  const list = normalizeList({ id: uid(), name: trimmed });
+  state.lists.push(list);
+  state.activeListId = list.id;
+  saveTasks();
+  closeListDialog();
+  render();
+}
+
 function render() {
   const listEl = document.getElementById("task-list");
   const emptyEl = document.getElementById("empty-state");
   const tasks = visibleTasks();
-  const allBtn = document.getElementById("nav-all-tasks");
-  if (allBtn) allBtn.textContent = `All tasks (${state.tasks.length})`;
+  const titleEl = document.querySelector(".app-title");
+  if (titleEl) titleEl.textContent = activeList().name;
+  renderDrawerLists();
 
   if (!tasks.length) {
     listEl.innerHTML = "";
@@ -684,10 +844,7 @@ function renderSubtaskList() {
       <button type="button" class="subtask-bullet${s.done ? " done" : ""}" data-action="toggle-sub" aria-label="Toggle sub task">
         <span class="subtask-dot"></span>
       </button>
-      <input type="text" class="subtask-title" maxlength="300" value="${escapeHtml(s.title)}" placeholder="Sub task…" />
-      <button type="button" class="subtask-drag" data-action="drag-sub" aria-label="Drag to reorder" title="Drag to reorder">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M9 5h2v2H9V5zm4 0h2v2h-2V5zM9 11h2v2H9v-2zm4 0h2v2h-2v-2zM9 17h2v2H9v-2zm4 0h2v2h-2v-2z"/></svg>
-      </button>
+      <input type="text" class="subtask-title" maxlength="300" value="${escapeHtml(s.title)}" placeholder="Sub task…" title="Drag to reorder" />
       <button type="button" class="subtask-remove" data-action="remove-sub" aria-label="Remove sub task">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
       </button>
@@ -707,29 +864,32 @@ function addDialogSubtask() {
   if (last) last.focus();
 }
 
-/** @type {{ item: HTMLElement, pointerId: number } | null} */
+/** @type {{ item: HTMLElement, pointerId: number, startX: number, startY: number, started: boolean, handle: HTMLElement } | null} */
 let subDrag = null;
+const SUBTASK_DRAG_THRESHOLD = 8;
 
 function bindSubtaskDragHandles() {
   const list = document.getElementById("subtask-list");
   if (!list) return;
-  list.querySelectorAll(".subtask-drag").forEach((handle) => {
-    handle.addEventListener("pointerdown", (e) => {
+  list.querySelectorAll(".subtask-title").forEach((handle) => {
+    const el = /** @type {HTMLElement} */ (handle);
+    el.addEventListener("pointerdown", (e) => {
       const ev = /** @type {PointerEvent} */ (e);
-      const item = /** @type {HTMLElement} */ (handle.closest(".subtask-item"));
+      if (ev.button != null && ev.button !== 0) return;
+      const item = /** @type {HTMLElement} */ (el.closest(".subtask-item"));
       if (!item) return;
-      ev.preventDefault();
-      subDrag = { item, pointerId: ev.pointerId };
-      item.classList.add("dragging");
-      try {
-        handle.setPointerCapture(ev.pointerId);
-      } catch {
-        /* ignore */
-      }
+      subDrag = {
+        item,
+        pointerId: ev.pointerId,
+        startX: ev.clientX,
+        startY: ev.clientY,
+        started: false,
+        handle: el,
+      };
     });
-    handle.addEventListener("pointermove", onSubtaskPointerMove);
-    handle.addEventListener("pointerup", onSubtaskPointerUp);
-    handle.addEventListener("pointercancel", onSubtaskPointerUp);
+    el.addEventListener("pointermove", onSubtaskPointerMove);
+    el.addEventListener("pointerup", onSubtaskPointerUp);
+    el.addEventListener("pointercancel", onSubtaskPointerUp);
   });
 }
 
@@ -739,6 +899,22 @@ function onSubtaskPointerMove(e) {
   if (!list) return;
   const ev = /** @type {PointerEvent} */ (e);
   if (ev.pointerId !== subDrag.pointerId) return;
+
+  if (!subDrag.started) {
+    const dx = ev.clientX - subDrag.startX;
+    const dy = ev.clientY - subDrag.startY;
+    if (Math.hypot(dx, dy) < SUBTASK_DRAG_THRESHOLD) return;
+    subDrag.started = true;
+    subDrag.item.classList.add("dragging");
+    subDrag.handle.blur();
+    try {
+      subDrag.handle.setPointerCapture(ev.pointerId);
+    } catch {
+      /* ignore */
+    }
+    ev.preventDefault();
+  }
+
   const el = document.elementFromPoint(ev.clientX, ev.clientY);
   const over = el?.closest(".subtask-item");
   if (!over || over === subDrag.item || !list.contains(over)) return;
@@ -751,9 +927,27 @@ function onSubtaskPointerUp(e) {
   if (!subDrag) return;
   const ev = /** @type {PointerEvent} */ (e);
   if (ev.pointerId !== subDrag.pointerId) return;
+  const wasDragging = subDrag.started;
   subDrag.item.classList.remove("dragging");
   subDrag = null;
-  state.dialogSubtasks = readDialogSubtasksFromDom(true).map(normalizeSubtask);
+  if (wasDragging) {
+    state.dialogSubtasks = readDialogSubtasksFromDom(true).map(normalizeSubtask);
+  }
+}
+
+function lockTaskEditorHeight() {
+  const dlg = document.getElementById("task-dialog");
+  if (!dlg) return;
+  const h = Math.round(window.visualViewport?.height || window.innerHeight);
+  dlg.style.height = `${h}px`;
+  dlg.style.maxHeight = `${h}px`;
+}
+
+function unlockTaskEditorHeight() {
+  const dlg = document.getElementById("task-dialog");
+  if (!dlg) return;
+  dlg.style.height = "";
+  dlg.style.maxHeight = "";
 }
 
 function openDialog(task) {
@@ -783,6 +977,7 @@ function openDialog(task) {
   document.getElementById("field-date").value = date;
   document.getElementById("field-time").value = time;
   state.editingId = task?.id || null;
+  lockTaskEditorHeight();
   dlg.showModal();
   autosizeTitleField();
   document.getElementById("field-title").focus();
@@ -802,6 +997,7 @@ function saveFromForm(e) {
   const existing = state.tasks.find((t) => t.id === id);
   const task = normalizeTask({
     id,
+    listId: existing?.listId || state.activeListId || DEFAULT_LIST_ID,
     title,
     due,
     done: existing?.done || false,
@@ -817,6 +1013,7 @@ function saveFromForm(e) {
   else state.tasks.unshift(task);
 
   saveTasks();
+  unlockTaskEditorHeight();
   document.getElementById("task-dialog").close();
   render();
 }
@@ -1014,10 +1211,12 @@ function bindEvents() {
   document.getElementById("menu-backdrop").addEventListener("click", closeMenu);
   document.getElementById("menu-clear-done").addEventListener("click", () => {
     closeMenu();
-    const n = state.tasks.filter((t) => t.done).length;
+    const n = tasksInActiveList().filter((t) => t.done).length;
     if (!n) return;
     if (!confirm(`Remove ${n} completed task(s)?`)) return;
-    state.tasks = state.tasks.filter((t) => !t.done);
+    state.tasks = state.tasks.filter(
+      (t) => (t.listId || DEFAULT_LIST_ID) !== state.activeListId || !t.done
+    );
     saveTasks();
     render();
   });
@@ -1042,27 +1241,34 @@ function bindEvents() {
   });
   document.getElementById("auth-form").addEventListener("submit", submitAuthForm);
 
-  document.querySelectorAll(".drawer-item[data-filter]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state.filter = btn.getAttribute("data-filter");
-      document.querySelectorAll(".drawer-item[data-filter]").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      closeDrawer();
-      render();
-    });
+  document.getElementById("btn-add-list").addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openListDialog();
+  });
+  document.getElementById("btn-list-cancel").addEventListener("click", closeListDialog);
+  document.getElementById("list-form").addEventListener("submit", submitListForm);
+  document.getElementById("drawer-lists").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-list-id]");
+    if (!btn) return;
+    setActiveList(btn.getAttribute("data-list-id"));
+    closeDrawer();
   });
 
   document.getElementById("btn-add").addEventListener("click", () => openDialog(null));
   document.getElementById("btn-add-fab").addEventListener("click", () => openDialog(null));
   document.getElementById("btn-dialog-close").addEventListener("click", () => {
+    unlockTaskEditorHeight();
     document.getElementById("task-dialog").close();
   });
   document.getElementById("btn-dialog-delete").addEventListener("click", () => {
     const id = document.getElementById("field-id").value;
     if (!id) return;
+    unlockTaskEditorHeight();
     document.getElementById("task-dialog").close();
     deleteTask(id);
   });
+  document.getElementById("task-dialog").addEventListener("close", unlockTaskEditorHeight);
   document.getElementById("field-title").addEventListener("input", autosizeTitleField);
   document.getElementById("btn-add-subtask").addEventListener("click", addDialogSubtask);
   document.getElementById("btn-plus-7days").addEventListener("click", addSevenDaysToDateFieldAndSave);
