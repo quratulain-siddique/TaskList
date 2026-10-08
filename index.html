@@ -78,7 +78,8 @@
   <!-- More menu -->
   <div class="menu-backdrop" id="menu-backdrop" hidden></div>
   <div class="overflow-menu" id="overflow-menu" hidden role="menu">
-    <button type="button" role="menuitem" id="menu-clear-done">Clear completed</button>
+    <button type="button" role="menuitem" id="menu-rename-list">Rename list</button>
+    <button type="button" role="menuitem" class="menu-danger" id="menu-delete-list">Delete list</button>
   </div>
 
   <!-- Add / Edit task — full screen -->
@@ -135,17 +136,17 @@
     </form>
   </dialog>
 
-  <!-- New list dialog -->
+  <!-- New / rename list dialog -->
   <dialog class="sheet" id="list-dialog">
     <form id="list-form">
-      <h2>New list</h2>
+      <h2 id="list-dialog-title">New list</h2>
       <label>
         Name
         <input type="text" id="list-name" required maxlength="60" autocomplete="off" placeholder="e.g. Shopping, Work" />
       </label>
       <div class="dialog-actions">
         <button type="button" class="btn-ghost" id="btn-list-cancel">Cancel</button>
-        <button type="submit" class="btn-primary" id="btn-list-create">Create</button>
+        <button type="submit" class="btn-primary" id="btn-list-save">Create</button>
       </div>
     </form>
   </dialog>

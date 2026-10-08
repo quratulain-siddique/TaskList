@@ -700,19 +700,33 @@ function setActiveList(listId) {
   render();
 }
 
-function openListDialog() {
+/** @type {string | null} null = create, else rename that list id */
+let listDialogEditId = null;
+
+function openListDialog(editId = null) {
   const dlg = document.getElementById("list-dialog");
   const input = document.getElementById("list-name");
+  const titleEl = document.getElementById("list-dialog-title");
+  const saveBtn = document.getElementById("btn-list-save");
   if (!dlg || !input) return;
-  input.value = "";
+  listDialogEditId = editId;
+  const existing = editId ? state.lists.find((l) => l.id === editId) : null;
+  input.value = existing?.name || "";
+  if (titleEl) titleEl.textContent = existing ? "Rename list" : "New list";
+  if (saveBtn) saveBtn.textContent = existing ? "Save" : "Create";
   closeDrawer();
+  closeMenu();
   if (typeof dlg.showModal === "function") dlg.showModal();
   else dlg.setAttribute("open", "");
-  setTimeout(() => input.focus(), 50);
+  setTimeout(() => {
+    input.focus();
+    input.select();
+  }, 50);
 }
 
 function closeListDialog() {
   const dlg = document.getElementById("list-dialog");
+  listDialogEditId = null;
   if (!dlg) return;
   if (typeof dlg.close === "function") dlg.close();
   else dlg.removeAttribute("open");
@@ -723,11 +737,37 @@ function submitListForm(e) {
   const input = document.getElementById("list-name");
   const trimmed = (input?.value || "").trim();
   if (!trimmed) return;
-  const list = normalizeList({ id: uid(), name: trimmed });
-  state.lists.push(list);
-  state.activeListId = list.id;
+  if (listDialogEditId) {
+    const list = state.lists.find((l) => l.id === listDialogEditId);
+    if (!list) return;
+    list.name = trimmed;
+  } else {
+    const list = normalizeList({ id: uid(), name: trimmed });
+    state.lists.push(list);
+    state.activeListId = list.id;
+  }
   saveTasks();
   closeListDialog();
+  render();
+}
+
+function deleteActiveList() {
+  ensureActiveList();
+  if (state.lists.length <= 1) {
+    alert("You need at least one list.");
+    return;
+  }
+  const list = activeList();
+  const n = tasksInActiveList().length;
+  const msg = n
+    ? `Delete “${list.name}” and its ${n} task(s)?`
+    : `Delete “${list.name}”?`;
+  if (!confirm(msg)) return;
+  const id = list.id;
+  state.lists = state.lists.filter((l) => l.id !== id);
+  state.tasks = state.tasks.filter((t) => (t.listId || DEFAULT_LIST_ID) !== id);
+  state.activeListId = state.lists[0].id;
+  saveTasks();
   render();
 }
 
@@ -1209,16 +1249,13 @@ function bindEvents() {
 
   document.getElementById("btn-more").addEventListener("click", openMenu);
   document.getElementById("menu-backdrop").addEventListener("click", closeMenu);
-  document.getElementById("menu-clear-done").addEventListener("click", () => {
+  document.getElementById("menu-rename-list").addEventListener("click", () => {
     closeMenu();
-    const n = tasksInActiveList().filter((t) => t.done).length;
-    if (!n) return;
-    if (!confirm(`Remove ${n} completed task(s)?`)) return;
-    state.tasks = state.tasks.filter(
-      (t) => (t.listId || DEFAULT_LIST_ID) !== state.activeListId || !t.done
-    );
-    saveTasks();
-    render();
+    openListDialog(state.activeListId);
+  });
+  document.getElementById("menu-delete-list").addEventListener("click", () => {
+    closeMenu();
+    deleteActiveList();
   });
 
   document.getElementById("btn-sign-in").addEventListener("click", () => {

@@ -62,9 +62,13 @@ body {
 .app-title {
   flex: 1;
   margin: 0;
+  min-width: 0;
   font-size: 1.35rem;
   font-weight: 600;
   letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .icon-btn {
@@ -550,6 +554,9 @@ iframe[src*="netlify"],
 .drawer-item.drawer-subitem {
   padding: 12px 20px 12px 32px;
   font-size: 0.92rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .drawer-item:active,
@@ -651,6 +658,10 @@ iframe[src*="netlify"],
 
 .overflow-menu button:active {
   background: #f5f5f5;
+}
+
+.overflow-menu button.menu-danger {
+  color: var(--danger);
 }
 
 /* —— Dialog sheet (auth) —— */
