@@ -98,6 +98,14 @@
       </header>
 
       <div class="task-editor-body">
+        <div class="editor-list-picker">
+          <label class="editor-list-select-wrap">
+            <span class="visually-hidden">List</span>
+            <select id="field-list-id" aria-label="List"></select>
+            <svg class="editor-list-chevron" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+          </label>
+        </div>
+
         <div class="title-field-wrap">
           <span class="title-field-label">What needs to be done?</span>
           <textarea id="field-title" required maxlength="300" rows="1" placeholder="Task title"></textarea>
@@ -127,17 +135,6 @@
             <input type="time" id="field-time" />
           </label>
           <button type="button" class="btn-plus-7days" id="btn-plus-7days" title="Set due date 7 days ahead and save">+7 days</button>
-        </section>
-
-        <section class="editor-section">
-          <h3 class="editor-section-label">List name</h3>
-          <div class="editor-list-row">
-            <span class="editor-list-current" id="field-list-label">Task list</span>
-            <label class="editor-list-move">
-              <span class="visually-hidden">Move to list</span>
-              <select id="field-list-id" aria-label="Move to list"></select>
-            </label>
-          </div>
         </section>
       </div>
 

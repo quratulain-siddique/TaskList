@@ -778,9 +778,23 @@ function setActiveList(listId) {
   render();
 }
 
+function fitEditorListSelectWidth() {
+  const select = /** @type {HTMLSelectElement|null} */ (document.getElementById("field-list-id"));
+  if (!select) return;
+  const label = select.selectedOptions[0]?.text || select.value || "";
+  const canvas = fitEditorListSelectWidth._canvas || (fitEditorListSelectWidth._canvas = document.createElement("canvas"));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const style = getComputedStyle(select);
+  ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  const textW = Math.ceil(ctx.measureText(label).width);
+  // border-box: padding-right for the chevron must be included in width
+  const chevronPad = 18;
+  select.style.width = `${textW + chevronPad + 4}px`;
+}
+
 function fillEditorListSelect(selectedId) {
   const select = /** @type {HTMLSelectElement|null} */ (document.getElementById("field-list-id"));
-  const label = document.getElementById("field-list-label");
   if (!select) return;
   const current = selectedId || defaultListIdForNewTask();
   select.innerHTML = state.lists
@@ -789,16 +803,7 @@ function fillEditorListSelect(selectedId) {
       return `<option value="${escapeHtml(l.id)}"${sel}>${escapeHtml(l.name)}</option>`;
     })
     .join("");
-  const name = state.lists.find((l) => l.id === current)?.name || DEFAULT_LIST_NAME;
-  if (label) label.textContent = name;
-}
-
-function onEditorListChange() {
-  const select = /** @type {HTMLSelectElement|null} */ (document.getElementById("field-list-id"));
-  const label = document.getElementById("field-list-label");
-  if (!select || !label) return;
-  const name = state.lists.find((l) => l.id === select.value)?.name || select.value;
-  label.textContent = name;
+  fitEditorListSelectWidth();
 }
 
 /** @type {string | null} null = create, else rename that list id */
@@ -1433,8 +1438,7 @@ function bindEvents() {
     setActiveList(btn.getAttribute("data-list-id"));
     closeDrawer();
   });
-  document.getElementById("field-list-id")?.addEventListener("change", onEditorListChange);
-
+  document.getElementById("field-list-id")?.addEventListener("change", fitEditorListSelectWidth);
   document.getElementById("btn-add").addEventListener("click", () => openDialog(null));
   document.getElementById("btn-add-fab").addEventListener("click", () => openDialog(null));
   document.getElementById("btn-dialog-close").addEventListener("click", () => {
