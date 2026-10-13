@@ -70,6 +70,7 @@
           <h2 class="drawer-section-title">Lists</h2>
           <button type="button" class="drawer-add-btn" id="btn-add-list" aria-label="Add list" title="Add list">+</button>
         </div>
+        <button type="button" class="drawer-item drawer-subitem" data-list-id="__all__" id="nav-all-tasks">All tasks</button>
         <div id="drawer-lists"></div>
       </section>
     </nav>
@@ -126,6 +127,17 @@
             <input type="time" id="field-time" />
           </label>
           <button type="button" class="btn-plus-7days" id="btn-plus-7days" title="Set due date 7 days ahead and save">+7 days</button>
+        </section>
+
+        <section class="editor-section">
+          <h3 class="editor-section-label">List name</h3>
+          <div class="editor-list-row">
+            <span class="editor-list-current" id="field-list-label">Task list</span>
+            <label class="editor-list-move">
+              <span class="visually-hidden">Move to list</span>
+              <select id="field-list-id" aria-label="Move to list"></select>
+            </label>
+          </div>
         </section>
       </div>
 

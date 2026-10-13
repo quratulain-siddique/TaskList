@@ -664,6 +664,10 @@ iframe[src*="netlify"],
   color: var(--danger);
 }
 
+.overflow-menu button[hidden] {
+  display: none !important;
+}
+
 /* —— Dialog sheet (auth) —— */
 .sheet {
   border: 0;
@@ -1034,18 +1038,21 @@ iframe[src*="netlify"],
 }
 
 .subtask-title {
-  flex: 1;
-  min-width: 0;
+  flex: 0 1 auto;
+  width: auto;
+  max-width: calc(100% - 72px);
+  min-width: 2.5rem;
   border: 0;
   outline: none;
   font: inherit;
   font-size: 1.05rem;
   font-weight: 400;
-  padding: 4px 4px;
+  padding: 4px 2px;
   background: transparent;
   color: var(--text);
   cursor: grab;
   touch-action: none;
+  field-sizing: content;
 }
 
 .subtask-title:active {
@@ -1057,9 +1064,62 @@ iframe[src*="netlify"],
   user-select: none;
 }
 
+.subtask-spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+  align-self: stretch;
+  pointer-events: none;
+}
+
 .subtask-bullet.done + .subtask-title {
   text-decoration: line-through;
   color: var(--muted);
+}
+
+.editor-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0 8px;
+  min-width: 0;
+}
+
+.editor-list-current {
+  flex: 1;
+  min-width: 0;
+  font-size: 1.05rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-list-move {
+  flex-shrink: 0;
+}
+
+.editor-list-move select {
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--text);
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+  max-width: 160px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .subtask-remove {
