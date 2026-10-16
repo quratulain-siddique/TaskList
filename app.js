@@ -186,8 +186,11 @@ function activeList() {
 }
 
 function defaultListIdForNewTask() {
-  if (isAllListsView()) return state.lists[0]?.id || DEFAULT_LIST_ID;
-  return state.activeListId || DEFAULT_LIST_ID;
+  // New tasks always belong to the default "Task list"
+  if (!state.lists.some((l) => l.id === DEFAULT_LIST_ID)) {
+    state.lists.unshift({ id: DEFAULT_LIST_ID, name: DEFAULT_LIST_NAME });
+  }
+  return DEFAULT_LIST_ID;
 }
 
 function parseStorageRaw(raw) {
@@ -747,6 +750,9 @@ const ICONS = {
 
 // —— Render ——
 
+const LIST_DRAG_ICON =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M9 5h2v2H9V5zm4 0h2v2h-2V5zM9 11h2v2H9v-2zm4 0h2v2h-2v-2zM9 17h2v2H9v-2zm4 0h2v2h-2v-2z"/></svg>';
+
 function renderDrawerLists() {
   const host = document.getElementById("drawer-lists");
   const allBtn = document.getElementById("nav-all-tasks");
@@ -760,9 +766,74 @@ function renderDrawerLists() {
     .map((l) => {
       const count = state.tasks.filter((t) => (t.listId || DEFAULT_LIST_ID) === l.id).length;
       const active = !isAllListsView() && l.id === state.activeListId ? " active" : "";
-      return `<button type="button" class="drawer-item drawer-subitem${active}" data-list-id="${escapeHtml(l.id)}">${escapeHtml(l.name)} (${count})</button>`;
+      return `<div class="drawer-list-row" data-list-row-id="${escapeHtml(l.id)}">
+      <button type="button" class="drawer-item drawer-subitem${active}" data-list-id="${escapeHtml(l.id)}">${escapeHtml(l.name)} (${count})</button>
+      <button type="button" class="drawer-list-drag" data-action="drag-list" aria-label="Reorder list" title="Drag to reorder">${LIST_DRAG_ICON}</button>
+    </div>`;
     })
     .join("");
+  bindDrawerListDragHandles();
+}
+
+/** @type {{ row: HTMLElement, pointerId: number } | null} */
+let listDrag = null;
+
+function bindDrawerListDragHandles() {
+  const host = document.getElementById("drawer-lists");
+  if (!host) return;
+  host.querySelectorAll(".drawer-list-drag").forEach((handle) => {
+    handle.addEventListener("pointerdown", (e) => {
+      const ev = /** @type {PointerEvent} */ (e);
+      if (ev.button != null && ev.button !== 0) return;
+      const row = /** @type {HTMLElement} */ (handle.closest(".drawer-list-row"));
+      if (!row) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      listDrag = { row, pointerId: ev.pointerId };
+      row.classList.add("dragging");
+      try {
+        handle.setPointerCapture(ev.pointerId);
+      } catch {
+        /* ignore */
+      }
+    });
+    handle.addEventListener("pointermove", onDrawerListPointerMove);
+    handle.addEventListener("pointerup", onDrawerListPointerUp);
+    handle.addEventListener("pointercancel", onDrawerListPointerUp);
+  });
+}
+
+function onDrawerListPointerMove(e) {
+  if (!listDrag) return;
+  const host = document.getElementById("drawer-lists");
+  if (!host) return;
+  const ev = /** @type {PointerEvent} */ (e);
+  if (ev.pointerId !== listDrag.pointerId) return;
+  ev.preventDefault();
+  const el = document.elementFromPoint(ev.clientX, ev.clientY);
+  const over = el?.closest(".drawer-list-row");
+  if (!over || over === listDrag.row || !host.contains(over)) return;
+  const rect = over.getBoundingClientRect();
+  const before = ev.clientY < rect.top + rect.height / 2;
+  host.insertBefore(listDrag.row, before ? over : over.nextSibling);
+}
+
+function onDrawerListPointerUp(e) {
+  if (!listDrag) return;
+  const ev = /** @type {PointerEvent} */ (e);
+  if (ev.pointerId !== listDrag.pointerId) return;
+  listDrag.row.classList.remove("dragging");
+  listDrag = null;
+  const host = document.getElementById("drawer-lists");
+  if (!host) return;
+  const ids = [...host.querySelectorAll(".drawer-list-row")].map((r) => r.getAttribute("data-list-row-id"));
+  const byId = new Map(state.lists.map((l) => [l.id, l]));
+  const next = ids.map((id) => byId.get(id)).filter(Boolean);
+  if (next.length === state.lists.length) {
+    state.lists = next;
+    saveTasks();
+    renderDrawerLists();
+  }
 }
 
 function setActiveList(listId) {
@@ -994,8 +1065,7 @@ function renderSubtaskList() {
       <button type="button" class="subtask-bullet${s.done ? " done" : ""}" data-action="toggle-sub" aria-label="Toggle sub task">
         <span class="subtask-dot"></span>
       </button>
-      <input type="text" class="subtask-title" maxlength="300" value="${escapeHtml(s.title)}" placeholder="Sub task…" title="Drag text to reorder" />
-      <span class="subtask-spacer" aria-hidden="true"></span>
+      <textarea class="subtask-title" maxlength="300" rows="1" readonly placeholder="Sub task…" title="Drag to reorder, tap to edit">${escapeHtml(s.title)}</textarea>
       <button type="button" class="subtask-remove" data-action="remove-sub" aria-label="Remove sub task">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
       </button>
@@ -1003,29 +1073,40 @@ function renderSubtaskList() {
     )
     .join("");
   if (empty) empty.hidden = state.dialogSubtasks.length > 0;
-  list.querySelectorAll(".subtask-title").forEach((input) => {
-    autosizeSubtaskTitle(/** @type {HTMLInputElement} */ (input));
-    input.addEventListener("input", () => autosizeSubtaskTitle(/** @type {HTMLInputElement} */ (input)));
+  list.querySelectorAll(".subtask-title").forEach((el) => {
+    const ta = /** @type {HTMLTextAreaElement} */ (el);
+    ta.addEventListener("input", () => autosizeSubtaskTitleHeight(ta));
+    ta.addEventListener("blur", () => {
+      ta.readOnly = true;
+      ta.classList.remove("editing");
+      autosizeSubtaskTitleHeight(ta);
+    });
   });
   bindSubtaskDragHandles();
+  // Measure after layout so wrap width is correct
+  requestAnimationFrame(() => {
+    list.querySelectorAll(".subtask-title").forEach((el) => {
+      autosizeSubtaskTitleHeight(/** @type {HTMLTextAreaElement} */ (el));
+    });
+  });
 }
 
-function autosizeSubtaskTitle(input) {
-  if (!input) return;
-  const mirror = input.value || input.placeholder || " ";
-  // Fit width to text only so empty row space is not a drag target
-  input.style.width = "0";
-  const style = getComputedStyle(input);
-  const canvas = autosizeSubtaskTitle._canvas || (autosizeSubtaskTitle._canvas = document.createElement("canvas"));
-  const ctx = canvas.getContext("2d");
-  if (ctx) {
-    ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-    const w = Math.ceil(ctx.measureText(mirror).width);
-    const pad = 8;
-    const max = Math.max(40, (input.parentElement?.clientWidth || 200) - 90);
-    input.style.width = `${Math.min(Math.max(w + pad, 40), max)}px`;
-  } else {
-    input.style.width = `${Math.min(Math.max(mirror.length, 4), 40)}ch`;
+function autosizeSubtaskTitleHeight(ta) {
+  if (!ta) return;
+  ta.style.height = "0px";
+  ta.style.height = `${Math.max(ta.scrollHeight, 28)}px`;
+}
+
+function beginSubtaskEdit(ta) {
+  if (!ta) return;
+  ta.readOnly = false;
+  ta.classList.add("editing");
+  ta.focus();
+  const len = ta.value.length;
+  try {
+    ta.setSelectionRange(len, len);
+  } catch {
+    /* ignore */
   }
 }
 
@@ -1034,24 +1115,36 @@ function addDialogSubtask() {
   state.dialogSubtasks.push({ id: uid(), title: "", done: false });
   renderSubtaskList();
   const inputs = document.querySelectorAll("#subtask-list .subtask-title");
-  const last = /** @type {HTMLInputElement|undefined} */ (inputs[inputs.length - 1]);
-  if (last) last.focus();
+  const last = /** @type {HTMLTextAreaElement|undefined} */ (inputs[inputs.length - 1]);
+  if (last) beginSubtaskEdit(last);
 }
 
-/** @type {{ item: HTMLElement, pointerId: number, startX: number, startY: number, started: boolean, handle: HTMLElement } | null} */
+/** @type {{ item: HTMLElement, pointerId: number, startX: number, startY: number, started: boolean, handle: HTMLTextAreaElement } | null} */
 let subDrag = null;
-const SUBTASK_DRAG_THRESHOLD = 8;
+const SUBTASK_DRAG_THRESHOLD = 10;
 
 function bindSubtaskDragHandles() {
   const list = document.getElementById("subtask-list");
   if (!list) return;
   list.querySelectorAll(".subtask-title").forEach((handle) => {
-    const el = /** @type {HTMLElement} */ (handle);
+    const el = /** @type {HTMLTextAreaElement} */ (handle);
+
+    el.addEventListener("selectstart", (e) => {
+      if (el.readOnly) e.preventDefault();
+    });
+
     el.addEventListener("pointerdown", (e) => {
       const ev = /** @type {PointerEvent} */ (e);
       if (ev.button != null && ev.button !== 0) return;
+      // Already editing: allow normal caret / text selection, no drag
+      if (!el.readOnly && document.activeElement === el) {
+        subDrag = null;
+        return;
+      }
       const item = /** @type {HTMLElement} */ (el.closest(".subtask-item"));
       if (!item) return;
+      // Stop browser text selection while deciding click vs drag
+      ev.preventDefault();
       subDrag = {
         item,
         pointerId: ev.pointerId,
@@ -1060,6 +1153,11 @@ function bindSubtaskDragHandles() {
         started: false,
         handle: el,
       };
+      try {
+        el.setPointerCapture(ev.pointerId);
+      } catch {
+        /* ignore */
+      }
     });
     el.addEventListener("pointermove", onSubtaskPointerMove);
     el.addEventListener("pointerup", onSubtaskPointerUp);
@@ -1080,15 +1178,14 @@ function onSubtaskPointerMove(e) {
     if (Math.hypot(dx, dy) < SUBTASK_DRAG_THRESHOLD) return;
     subDrag.started = true;
     subDrag.item.classList.add("dragging");
+    subDrag.handle.readOnly = true;
+    subDrag.handle.classList.remove("editing");
     subDrag.handle.blur();
-    try {
-      subDrag.handle.setPointerCapture(ev.pointerId);
-    } catch {
-      /* ignore */
-    }
+    window.getSelection()?.removeAllRanges();
     ev.preventDefault();
   }
 
+  ev.preventDefault();
   const el = document.elementFromPoint(ev.clientX, ev.clientY);
   const over = el?.closest(".subtask-item");
   if (!over || over === subDrag.item || !list.contains(over)) return;
@@ -1102,11 +1199,16 @@ function onSubtaskPointerUp(e) {
   const ev = /** @type {PointerEvent} */ (e);
   if (ev.pointerId !== subDrag.pointerId) return;
   const wasDragging = subDrag.started;
+  const handle = subDrag.handle;
   subDrag.item.classList.remove("dragging");
   subDrag = null;
   if (wasDragging) {
     state.dialogSubtasks = readDialogSubtasksFromDom(true).map(normalizeSubtask);
+    window.getSelection()?.removeAllRanges();
+    return;
   }
+  // Tap → edit
+  beginSubtaskEdit(handle);
 }
 
 function lockTaskEditorHeight() {
@@ -1147,10 +1249,12 @@ function openDialog(task) {
     } else {
       date = task.due;
     }
+  } else if (!task) {
+    date = formatLocalDate(new Date());
   }
   document.getElementById("field-date").value = date;
   document.getElementById("field-time").value = time;
-  fillEditorListSelect(task?.listId || defaultListIdForNewTask());
+  fillEditorListSelect(task ? task.listId || DEFAULT_LIST_ID : defaultListIdForNewTask());
   state.editingId = task?.id || null;
   lockTaskEditorHeight();
   dlg.showModal();
