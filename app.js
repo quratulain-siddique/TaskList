@@ -72,14 +72,17 @@ function updateAccountUi() {
   const sub = document.getElementById("drawer-sub");
   const btnIn = document.getElementById("btn-sign-in");
   const btnOut = document.getElementById("btn-sign-out");
+  const btnReplace = document.getElementById("btn-replace-from-firebase");
   if (state.user) {
     sub.textContent = state.user.email || "Signed in";
     btnIn.hidden = true;
     btnOut.hidden = false;
+    if (btnReplace) btnReplace.hidden = false;
   } else {
     sub.textContent = "Guest — stored on this device";
     btnIn.hidden = false;
     btnOut.hidden = true;
+    if (btnReplace) btnReplace.hidden = true;
   }
 }
 
@@ -425,14 +428,16 @@ function setLoading(on, message = "Loading tasks…") {
   el.hidden = !on;
 }
 
-/** Apply Firebase tasks as source of truth; lists are resolved so task listIds stay visible. */
-function applyCloudState(cloudTasks, cloudLists, localListsForNames = null) {
+/**
+ * Explicit restore only: copy Firebase → local.
+ * Normal sync never does this; local is always the source of truth.
+ */
+function applyFirebaseToLocal(cloudTasks, cloudLists) {
   applyingRemote = true;
   const prevActive = state.activeListId;
   const tasks = (cloudTasks || []).map(normalizeTask);
-  const localHints = localListsForNames || state.lists;
   state.tasks = tasks;
-  state.lists = resolveListsForAccount(cloudLists, tasks, localHints);
+  state.lists = resolveListsForAccount(cloudLists, tasks, cloudLists);
   if (prevActive === ALL_LISTS_ID) {
     state.activeListId = ALL_LISTS_ID;
   } else if (prevActive && state.lists.some((l) => l.id === prevActive)) {
@@ -447,11 +452,33 @@ function applyCloudState(cloudTasks, cloudLists, localListsForNames = null) {
   render();
 }
 
+/** Push current local state to Firebase (backup). Does not read cloud into local. */
+async function pushLocalToFirebase() {
+  if (!state.user || !db || !navigator.onLine) return;
+  state.tasks = state.tasks.map(normalizeTask);
+  state.lists = state.lists.map(normalizeList);
+  ensureActiveList();
+  writeLocalReplica();
+  await setDoc(
+    userDocRef(state.user.uid),
+    {
+      tasks: state.tasks,
+      lists: state.lists,
+      updatedAt: nowIso(),
+      email: state.user.email || "",
+    },
+    { merge: true }
+  );
+  markReplicaCheckedToday();
+}
+
+/**
+ * Local is source of truth. On login / back online: keep local, backup to Firebase.
+ * Never overwrite local from Firebase here.
+ */
 async function startCloudSync(user) {
   stopCloudSync();
-  // Show cached replica while offline / until cloud loads
   loadLocalTasks();
-  const localBeforeSync = readLocalSnapshot();
   render();
 
   if (!navigator.onLine) {
@@ -459,56 +486,52 @@ async function startCloudSync(user) {
     return;
   }
 
-  setLoading(true, "Syncing tasks…");
+  setLoading(true, "Backing up to cloud…");
   try {
-    const ref = userDocRef(user.uid);
-    const snap = await getDoc(ref);
+    await pushLocalToFirebase();
+    setLoading(false);
+  } catch (e) {
+    console.warn("Cloud backup unavailable, keeping local:", e);
+    setLoading(false);
+    loadLocalTasks();
+    render();
+  }
+}
+
+/** Manual restore: Firebase → local (only via drawer button). */
+async function replaceLocalWithFirebase() {
+  if (!state.user || !db) {
+    alert("Sign in first to restore from Firebase.");
+    return;
+  }
+  if (!navigator.onLine) {
+    alert("You need to be online to load Firebase data.");
+    return;
+  }
+  if (
+    !confirm(
+      "Replace all local tasks and lists with Firebase data?\n\nYour local changes on this device will be overwritten."
+    )
+  ) {
+    return;
+  }
+  closeDrawer();
+  setLoading(true, "Loading from Firebase…");
+  try {
+    const snap = await getDoc(userDocRef(state.user.uid));
     const cloudTasks =
       snap.exists() && Array.isArray(snap.data()?.tasks)
         ? snap.data().tasks.map(normalizeTask)
         : [];
-    const cloudListsRaw =
-      snap.exists() && Array.isArray(snap.data()?.lists) ? snap.data().lists.map(normalizeList) : [];
-
-    // Tasks come from Firebase; lists are recovered if cloud metadata was missing
-    applyCloudState(cloudTasks, cloudListsRaw, localBeforeSync.lists);
-
-    if (!snap.exists()) {
-      await setDoc(ref, {
-        tasks: [],
-        lists: defaultLists(),
-        updatedAt: nowIso(),
-        email: user.email || "",
-      });
-    } else if (!cloudListsRaw.length && state.lists.length) {
-      // Heal account: persist recovered lists so other devices see them
-      scheduleCloudPush();
-    }
-
-    unsubTasks = onSnapshot(
-      ref,
-      (docSnap) => {
-        if (!docSnap.exists()) return;
-        const remote = Array.isArray(docSnap.data()?.tasks)
-          ? docSnap.data().tasks.map(normalizeTask)
-          : [];
-        const remoteLists = Array.isArray(docSnap.data()?.lists)
-          ? docSnap.data().lists.map(normalizeList)
-          : [];
-        applyCloudState(remote, remoteLists, state.lists);
-      },
-      (err) => {
-        console.warn("Cloud sync error:", err);
-        setLoading(false);
-        loadLocalTasks();
-        render();
-      }
-    );
+    const cloudLists =
+      snap.exists() && Array.isArray(snap.data()?.lists)
+        ? snap.data().lists.map(normalizeList)
+        : [];
+    applyFirebaseToLocal(cloudTasks, cloudLists);
   } catch (e) {
-    console.warn("Cloud sync unavailable, using local cache:", e);
+    console.warn(e);
     setLoading(false);
-    loadLocalTasks();
-    render();
+    alert("Could not load Firebase data. Try again.");
   }
 }
 
@@ -517,7 +540,7 @@ function handleAuthUser(user) {
   if (user) {
     state.user = { uid: user.uid, email: user.email || "" };
     updateAccountUi();
-    // Cache first for offline, then replace with Firebase (source of truth)
+    // Keep local; push it up as backup
     loadLocalTasks();
     render();
     startCloudSync(state.user).catch((e) => {
@@ -1548,6 +1571,9 @@ function bindEvents() {
     openAuthDialog();
   });
   document.getElementById("btn-sign-out").addEventListener("click", doSignOut);
+  document.getElementById("btn-replace-from-firebase")?.addEventListener("click", () => {
+    replaceLocalWithFirebase();
+  });
   document.getElementById("btn-auth-cancel").addEventListener("click", closeAuthDialog);
   document.getElementById("btn-auth-switch").addEventListener("click", () => {
     setAuthMode(authMode === "signin" ? "signup" : "signin");
