@@ -8,7 +8,6 @@ import {
   getAuth,
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
   signOut,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
@@ -1321,21 +1320,31 @@ function deleteTask(id) {
 
 // —— Auth UI ——
 
+const SIGNUP_NOTIFY_EMAIL = "quratulainsiddique12@gmail.com";
+
 /** @type {"signin" | "signup"} */
 let authMode = "signin";
 
 function setAuthMode(mode) {
   authMode = mode;
-  const isSignUp = mode === "signup";
-  document.getElementById("auth-dialog-title").textContent = isSignUp ? "Sign up" : "Sign in";
-  document.getElementById("auth-hint").textContent = isSignUp
-    ? "Create an account to sync tasks across your devices."
+  const isRequest = mode === "signup";
+  const pwWrap = document.getElementById("auth-password-wrap");
+  const pw = document.getElementById("auth-password");
+  document.getElementById("auth-dialog-title").textContent = isRequest ? "Request access" : "Sign in";
+  document.getElementById("auth-hint").textContent = isRequest
+    ? "New accounts are invite-only. Enter your email and the owner will be notified."
     : "Use the same email on any device to sync your tasks.";
-  document.getElementById("btn-auth-switch").textContent = isSignUp ? "Sign in" : "Sign up";
-  document.getElementById("btn-auth-submit").textContent = isSignUp ? "Sign up" : "Sign in";
-  document.getElementById("auth-password").autocomplete = isSignUp ? "new-password" : "current-password";
-  document.getElementById("auth-error").hidden = true;
-  document.getElementById("auth-error").textContent = "";
+  document.getElementById("btn-auth-switch").textContent = isRequest ? "Sign in" : "Request access";
+  document.getElementById("btn-auth-submit").textContent = isRequest ? "Send request" : "Sign in";
+  if (pwWrap) pwWrap.hidden = isRequest;
+  if (pw) {
+    pw.required = !isRequest;
+    pw.autocomplete = "current-password";
+  }
+  const err = document.getElementById("auth-error");
+  err.hidden = true;
+  err.textContent = "";
+  err.classList.remove("auth-success");
 }
 
 function openAuthDialog() {
@@ -1409,26 +1418,51 @@ async function doSignIn(e) {
   }
 }
 
-async function doSignUp() {
-  if (!requireFirebaseReady()) return;
+/** Notify owner instead of creating a Firebase account (invite-only). */
+async function doRequestSignupAccess() {
   const email = document.getElementById("auth-email").value.trim();
-  const password = document.getElementById("auth-password").value;
-  if (!email || password.length < 6) {
-    showAuthError({ message: "Enter email and a password of at least 6 characters." });
+  const errEl = document.getElementById("auth-error");
+  const submitBtn = document.getElementById("btn-auth-submit");
+  if (!email) {
+    showAuthError({ message: "Enter your email address." });
     return;
   }
+  errEl.hidden = true;
+  errEl.classList.remove("auth-success");
+  if (submitBtn) submitBtn.disabled = true;
   try {
-    await createUserWithEmailAndPassword(auth, email, password);
-    closeAuthDialog();
-    closeDrawer();
-  } catch (err) {
-    showAuthError(err);
+    const res = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(SIGNUP_NOTIFY_EMAIL)}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        _subject: `${email} wants to signup`,
+        email,
+        message: `${email} wants to sign up for TaskList.`,
+      }),
+    });
+    if (!res.ok) throw new Error("Could not send request");
+    errEl.textContent = "Request sent. The owner will contact you if access is granted.";
+    errEl.classList.add("auth-success");
+    errEl.hidden = false;
+  } catch {
+    // Fallback: open mail client so the request is still delivered
+    const subject = encodeURIComponent(`${email} wants to signup`);
+    const body = encodeURIComponent(`${email} wants to sign up for TaskList.`);
+    window.location.href = `mailto:${SIGNUP_NOTIFY_EMAIL}?subject=${subject}&body=${body}`;
+    errEl.textContent = "Opening your email app to send the request…";
+    errEl.classList.add("auth-success");
+    errEl.hidden = false;
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
 }
 
 async function submitAuthForm(e) {
   e.preventDefault();
-  if (authMode === "signup") await doSignUp();
+  if (authMode === "signup") await doRequestSignupAccess();
   else await doSignIn();
 }
 

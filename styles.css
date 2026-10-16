@@ -673,7 +673,15 @@ iframe[src*="netlify"],
   color: var(--danger);
 }
 
+.auth-error.auth-success {
+  color: #2e7d32;
+}
+
 .auth-error[hidden] {
+  display: none !important;
+}
+
+#auth-password-wrap[hidden] {
   display: none !important;
 }
 
