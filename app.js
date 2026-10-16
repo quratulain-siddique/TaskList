@@ -480,21 +480,14 @@ async function startCloudSync(user) {
   stopCloudSync();
   loadLocalTasks();
   render();
+  setLoading(false);
 
-  if (!navigator.onLine) {
-    setLoading(false);
-    return;
-  }
-
-  setLoading(true, "Backing up to cloud…");
+  // Backup local → Firebase in the background (no blocking overlay)
+  if (!navigator.onLine || !user) return;
   try {
     await pushLocalToFirebase();
-    setLoading(false);
   } catch (e) {
     console.warn("Cloud backup unavailable, keeping local:", e);
-    setLoading(false);
-    loadLocalTasks();
-    render();
   }
 }
 
@@ -546,8 +539,6 @@ function handleAuthUser(user) {
     startCloudSync(state.user).catch((e) => {
       console.warn(e);
       setLoading(false);
-      loadLocalTasks();
-      render();
     });
   } else {
     state.user = null;
@@ -1775,8 +1766,8 @@ updateAccountUi();
 loadLocalTasks();
 render();
 
+setLoading(false);
 if (initFirebase() && auth) {
-  setLoading(true, "Syncing tasks…");
   onAuthStateChanged(auth, (user) => {
     handleAuthUser(user);
   });
@@ -1787,8 +1778,6 @@ if (initFirebase() && auth) {
       if (navigator.onLine && state.user) syncWhenOnline();
     }
   });
-} else {
-  setLoading(false);
 }
 
 if ("serviceWorker" in navigator) {
