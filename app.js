@@ -188,9 +188,15 @@ function activeList() {
 }
 
 function defaultListIdForNewTask() {
-  // New tasks always belong to the default "Task list"
   if (!state.lists.some((l) => l.id === DEFAULT_LIST_ID)) {
     state.lists.unshift({ id: DEFAULT_LIST_ID, name: DEFAULT_LIST_NAME });
+  }
+  // All tasks or Task list → default "Task list"; any other list → that list
+  if (isAllListsView() || state.activeListId === DEFAULT_LIST_ID) {
+    return DEFAULT_LIST_ID;
+  }
+  if (state.lists.some((l) => l.id === state.activeListId)) {
+    return state.activeListId;
   }
   return DEFAULT_LIST_ID;
 }
@@ -627,7 +633,7 @@ function formatDue(due) {
   return s;
 }
 
-function addSevenDaysToDateFieldAndSave() {
+function addDaysToDateFieldAndSave(days) {
   const dateEl = document.getElementById("field-date");
   let base;
   if (dateEl.value && /^\d{4}-\d{2}-\d{2}$/.test(dateEl.value)) {
@@ -636,7 +642,7 @@ function addSevenDaysToDateFieldAndSave() {
   } else {
     base = new Date();
   }
-  base.setDate(base.getDate() + 7);
+  base.setDate(base.getDate() + days);
   dateEl.value = formatLocalDate(base);
   saveFromForm(new Event("submit", { cancelable: true }));
 }
@@ -1610,7 +1616,8 @@ function bindEvents() {
   document.getElementById("task-dialog").addEventListener("close", unlockTaskEditorHeight);
   document.getElementById("field-title").addEventListener("input", autosizeTitleField);
   document.getElementById("btn-add-subtask").addEventListener("click", addDialogSubtask);
-  document.getElementById("btn-plus-7days").addEventListener("click", addSevenDaysToDateFieldAndSave);
+  document.getElementById("btn-plus-1day").addEventListener("click", () => addDaysToDateFieldAndSave(1));
+  document.getElementById("btn-plus-7days").addEventListener("click", () => addDaysToDateFieldAndSave(7));
   ["field-date", "field-time"].forEach((id) => {
     const input = document.getElementById(id);
     if (!input) return;
