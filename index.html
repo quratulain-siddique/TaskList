@@ -108,11 +108,11 @@
         </div>
 
         <div class="title-field-wrap">
-          <span class="title-field-label">What needs to be done?</span>
+          <span class="title-field-label" id="field-title-label">What needs to be done?</span>
           <textarea id="field-title" required maxlength="300" rows="1" placeholder="Task title"></textarea>
         </div>
 
-        <section class="editor-section">
+        <section class="editor-section" id="section-subtasks">
           <h3 class="editor-section-label">Subtasks</h3>
           <ul class="subtask-list" id="subtask-list"></ul>
           <p class="subtasks-empty" id="subtasks-empty">No sub tasks yet.</p>
@@ -121,23 +121,40 @@
           </button>
         </section>
 
+        <section class="editor-section cookbook-only" id="section-ingredients" hidden>
+          <h3 class="editor-section-label">Ingredients</h3>
+          <div class="recipe-field-wrap">
+            <textarea id="field-ingredients" rows="4" maxlength="4000" placeholder="List ingredients…"></textarea>
+          </div>
+        </section>
+
+        <section class="editor-section cookbook-only" id="section-method" hidden>
+          <h3 class="editor-section-label">Method</h3>
+          <div class="recipe-field-wrap">
+            <textarea id="field-method" rows="5" maxlength="8000" placeholder="Cooking steps…"></textarea>
+          </div>
+        </section>
+
         <section class="editor-section">
           <h3 class="editor-section-label">Due date</h3>
-          <label class="editor-field-row">
-            <span class="editor-field-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/></svg>
-            </span>
-            <input type="date" id="field-date" />
-          </label>
-          <label class="editor-field-row">
-            <span class="editor-field-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg>
-            </span>
-            <input type="time" id="field-time" />
-          </label>
+          <div class="editor-due-row">
+            <label class="editor-field-row editor-due-part">
+              <span class="editor-field-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/></svg>
+              </span>
+              <input type="date" id="field-date" />
+            </label>
+            <label class="editor-field-row editor-due-part">
+              <span class="editor-field-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg>
+              </span>
+              <input type="time" id="field-time" />
+            </label>
+          </div>
           <div class="due-quick-actions">
             <button type="button" class="btn-plus-days" id="btn-plus-1day" title="Set due date 1 day ahead and save">+1 day</button>
             <button type="button" class="btn-plus-days" id="btn-plus-7days" title="Set due date 7 days ahead and save">+7 days</button>
+            <button type="button" class="btn-plus-days" id="btn-plus-1month" title="Set due date 1 month ahead and save">+1 month</button>
           </div>
         </section>
       </div>

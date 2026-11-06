@@ -26,7 +26,7 @@ const ALL_LISTS_ID = "__all__";
 
 /** @typedef {{ id: string, title: string, done: boolean }} Subtask */
 /** @typedef {{ id: string, name: string }} TaskList */
-/** @typedef {{ id: string, listId: string, title: string, due: string|null, done: boolean, progress: number, total: number, notes: string, subtasks: Subtask[], updatedAt?: string }} Task */
+/** @typedef {{ id: string, listId: string, title: string, due: string|null, done: boolean, progress: number, total: number, notes: string, ingredients: string, method: string, subtasks: Subtask[], updatedAt?: string }} Task */
 
 const state = {
   tasks: /** @type {Task[]} */ ([]),
@@ -298,6 +298,8 @@ function mergeTwoTasks(cloud, local) {
     progress: newer.progress,
     total: newer.total,
     notes: newer.notes || older.notes,
+    ingredients: newer.ingredients || older.ingredients || "",
+    method: newer.method || older.method || "",
     subtasks: mergeSubtaskLists(c.subtasks, l.subtasks),
     updatedAt: newer.updatedAt || older.updatedAt || nowIso(),
   });
@@ -589,9 +591,16 @@ function normalizeTask(t) {
     progress: Math.max(0, Number(t?.progress) || 0),
     total: Math.max(0, Number(t?.total) || 0),
     notes: String(t?.notes || ""),
+    ingredients: String(t?.ingredients || ""),
+    method: String(t?.method || ""),
     subtasks,
     updatedAt: t?.updatedAt ? String(t.updatedAt) : "",
   };
+}
+
+function isCookbookListId(listId) {
+  const name = state.lists.find((l) => l.id === listId)?.name || "";
+  return name.trim().toLowerCase() === "cookbook";
 }
 
 function uid() {
@@ -633,16 +642,31 @@ function formatDue(due) {
   return s;
 }
 
-function addDaysToDateFieldAndSave(days) {
+function readDueDateFieldBase() {
   const dateEl = document.getElementById("field-date");
-  let base;
   if (dateEl.value && /^\d{4}-\d{2}-\d{2}$/.test(dateEl.value)) {
     const [y, m, day] = dateEl.value.split("-").map(Number);
-    base = new Date(y, m - 1, day);
-  } else {
-    base = new Date();
+    return new Date(y, m - 1, day);
   }
+  return new Date();
+}
+
+function addDaysToDateFieldAndSave(days) {
+  const dateEl = document.getElementById("field-date");
+  const base = readDueDateFieldBase();
   base.setDate(base.getDate() + days);
+  dateEl.value = formatLocalDate(base);
+  saveFromForm(new Event("submit", { cancelable: true }));
+}
+
+function addMonthsToDateFieldAndSave(months) {
+  const dateEl = document.getElementById("field-date");
+  const base = readDueDateFieldBase();
+  const day = base.getDate();
+  base.setDate(1);
+  base.setMonth(base.getMonth() + months);
+  const lastDay = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+  base.setDate(Math.min(day, lastDay));
   dateEl.value = formatLocalDate(base);
   saveFromForm(new Event("submit", { cancelable: true }));
 }
@@ -691,6 +715,37 @@ function deferTaskOneDay(id) {
   render();
 }
 
+function listNameForTask(task) {
+  const id = task?.listId || DEFAULT_LIST_ID;
+  return state.lists.find((l) => l.id === id)?.name || "";
+}
+
+function isCookbookTask(task) {
+  return isCookbookListId(task?.listId || DEFAULT_LIST_ID);
+}
+
+function addOneMonthToDue(due) {
+  const keepTime = due && due.includes("T") && due.length > 10;
+  let base;
+  if (!due) {
+    base = new Date();
+  } else {
+    base = parseDue(due);
+    if (!base) base = new Date();
+  }
+  const day = base.getDate();
+  base.setDate(1);
+  base.setMonth(base.getMonth() + 1);
+  const lastDay = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+  base.setDate(Math.min(day, lastDay));
+  if (keepTime) {
+    const timePart = due.split("T")[1].slice(0, 5);
+    return `${formatLocalDate(base)}T${timePart}`;
+  }
+  if (due && due.includes("T")) return formatLocalDateTime(base);
+  return formatLocalDate(base);
+}
+
 function setTaskDueToNow(id) {
   const t = state.tasks.find((x) => x.id === id);
   if (!t || t.done) return;
@@ -698,6 +753,20 @@ function setTaskDueToNow(id) {
   t.updatedAt = nowIso();
   saveTasks();
   render();
+}
+
+/** Swipe right: Cookbook lists get +1 month; others set due to now. */
+function handleSwipeRight(id) {
+  const t = state.tasks.find((x) => x.id === id);
+  if (!t || t.done) return;
+  if (isCookbookTask(t)) {
+    t.due = addOneMonthToDue(t.due);
+    t.updatedAt = nowIso();
+    saveTasks();
+    render();
+    return;
+  }
+  setTaskDueToNow(id);
 }
 
 function isOverdue(task) {
@@ -742,6 +811,8 @@ function visibleTasks() {
       (t) =>
         t.title.toLowerCase().includes(q) ||
         t.notes.toLowerCase().includes(q) ||
+        (t.ingredients || "").toLowerCase().includes(q) ||
+        (t.method || "").toLowerCase().includes(q) ||
         (t.subtasks || []).some((s) => s.title.toLowerCase().includes(q))
     );
   }
@@ -894,6 +965,21 @@ function fillEditorListSelect(selectedId) {
     })
     .join("");
   fitEditorListSelectWidth();
+  updateEditorModeForList(current);
+}
+
+function updateEditorModeForList(listId) {
+  const cookbook = isCookbookListId(listId || "");
+  const titleLabel = document.getElementById("field-title-label");
+  const titleField = document.getElementById("field-title");
+  const subtasks = document.getElementById("section-subtasks");
+  const ingredients = document.getElementById("section-ingredients");
+  const method = document.getElementById("section-method");
+  if (titleLabel) titleLabel.textContent = cookbook ? "Name" : "What needs to be done?";
+  if (titleField) titleField.placeholder = cookbook ? "Recipe name" : "Task title";
+  if (subtasks) subtasks.hidden = cookbook;
+  if (ingredients) ingredients.hidden = !cookbook;
+  if (method) method.hidden = !cookbook;
 }
 
 /** @type {string | null} null = create, else rename that list id */
@@ -1017,9 +1103,10 @@ function renderCard(t, forceOverdueStyle) {
     subCount = `<span class="meta-subcount">${ICONS.subdone}${doneN}/${t.subtasks.length}</span>`;
   }
 
+  const swipeRightLabel = isCookbookTask(t) ? "+1 month" : "Set to now";
   return `
     <div class="task-card-wrap" data-id="${t.id}">
-      <div class="task-swipe-label swipe-now">Set to now</div>
+      <div class="task-swipe-label swipe-now">${swipeRightLabel}</div>
       <div class="task-swipe-label swipe-delete">Delete</div>
       <article class="task-card" data-id="${t.id}">
         <div class="task-row${t.done ? " done" : ""}">
@@ -1252,6 +1339,8 @@ function openDialog(task) {
   document.getElementById("dialog-title").textContent = task ? "Edit Task" : "New Task";
   document.getElementById("field-id").value = task?.id || "";
   document.getElementById("field-title").value = task?.title || "";
+  document.getElementById("field-ingredients").value = task?.ingredients || "";
+  document.getElementById("field-method").value = task?.method || "";
   deleteBtn.hidden = !task;
   if (deleteSpacer) deleteSpacer.hidden = !!task;
 
@@ -1299,6 +1388,8 @@ function saveFromForm(e) {
     existing?.listId ||
     defaultListIdForNewTask() ||
     DEFAULT_LIST_ID;
+  const ingredients = document.getElementById("field-ingredients")?.value || "";
+  const method = document.getElementById("field-method")?.value || "";
   const task = normalizeTask({
     id,
     listId,
@@ -1308,7 +1399,9 @@ function saveFromForm(e) {
     progress: existing?.progress ?? 0,
     total: existing?.total ?? 0,
     notes: existing?.notes || "",
-    subtasks: readDialogSubtasksFromDom(false),
+    ingredients: isCookbookListId(listId) ? ingredients : existing?.ingredients || "",
+    method: isCookbookListId(listId) ? method : existing?.method || "",
+    subtasks: isCookbookListId(listId) ? existing?.subtasks || [] : readDialogSubtasksFromDom(false),
     updatedAt: nowIso(),
   });
 
@@ -1599,7 +1692,11 @@ function bindEvents() {
     setActiveList(btn.getAttribute("data-list-id"));
     closeDrawer();
   });
-  document.getElementById("field-list-id")?.addEventListener("change", fitEditorListSelectWidth);
+  document.getElementById("field-list-id")?.addEventListener("change", () => {
+    fitEditorListSelectWidth();
+    const select = /** @type {HTMLSelectElement|null} */ (document.getElementById("field-list-id"));
+    updateEditorModeForList(select?.value || "");
+  });
   document.getElementById("btn-add").addEventListener("click", () => openDialog(null));
   document.getElementById("btn-add-fab").addEventListener("click", () => openDialog(null));
   document.getElementById("btn-dialog-close").addEventListener("click", () => {
@@ -1618,6 +1715,7 @@ function bindEvents() {
   document.getElementById("btn-add-subtask").addEventListener("click", addDialogSubtask);
   document.getElementById("btn-plus-1day").addEventListener("click", () => addDaysToDateFieldAndSave(1));
   document.getElementById("btn-plus-7days").addEventListener("click", () => addDaysToDateFieldAndSave(7));
+  document.getElementById("btn-plus-1month").addEventListener("click", () => addMonthsToDateFieldAndSave(1));
   ["field-date", "field-time"].forEach((id) => {
     const input = document.getElementById(id);
     if (!input) return;
@@ -1750,7 +1848,7 @@ function bindSwipe(listEl) {
     gesture = null;
     if (active && dx >= THRESHOLD) {
       resetCard(card, wrap);
-      setTaskDueToNow(id);
+      handleSwipeRight(id);
       return;
     }
     if (active && dx <= -THRESHOLD) {
