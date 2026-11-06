@@ -598,9 +598,16 @@ function normalizeTask(t) {
   };
 }
 
+function listNameById(listId) {
+  return state.lists.find((l) => l.id === listId)?.name || "";
+}
+
 function isCookbookListId(listId) {
-  const name = state.lists.find((l) => l.id === listId)?.name || "";
-  return name.trim().toLowerCase() === "cookbook";
+  return listNameById(listId).trim().toLowerCase() === "cookbook";
+}
+
+function isShoppingCartListId(listId) {
+  return listNameById(listId).trim().toLowerCase() === "shopping cart";
 }
 
 function uid() {
@@ -716,12 +723,33 @@ function deferTaskOneDay(id) {
 }
 
 function listNameForTask(task) {
-  const id = task?.listId || DEFAULT_LIST_ID;
-  return state.lists.find((l) => l.id === id)?.name || "";
+  return listNameById(task?.listId || DEFAULT_LIST_ID);
 }
 
 function isCookbookTask(task) {
   return isCookbookListId(task?.listId || DEFAULT_LIST_ID);
+}
+
+function isShoppingCartTask(task) {
+  return isShoppingCartListId(task?.listId || DEFAULT_LIST_ID);
+}
+
+function addDaysToDue(due, days) {
+  const keepTime = due && due.includes("T") && due.length > 10;
+  let base;
+  if (!due) {
+    base = new Date();
+  } else {
+    base = parseDue(due);
+    if (!base) base = new Date();
+  }
+  base.setDate(base.getDate() + days);
+  if (keepTime) {
+    const timePart = due.split("T")[1].slice(0, 5);
+    return `${formatLocalDate(base)}T${timePart}`;
+  }
+  if (due && due.includes("T")) return formatLocalDateTime(base);
+  return formatLocalDate(base);
 }
 
 function addOneMonthToDue(due) {
@@ -755,12 +783,19 @@ function setTaskDueToNow(id) {
   render();
 }
 
-/** Swipe right: Cookbook lists get +1 month; others set due to now. */
+/** Swipe right: Cookbook +1 month, Shopping cart +7 days, else set due to now. */
 function handleSwipeRight(id) {
   const t = state.tasks.find((x) => x.id === id);
   if (!t || t.done) return;
   if (isCookbookTask(t)) {
     t.due = addOneMonthToDue(t.due);
+    t.updatedAt = nowIso();
+    saveTasks();
+    render();
+    return;
+  }
+  if (isShoppingCartTask(t)) {
+    t.due = addDaysToDue(t.due, 7);
     t.updatedAt = nowIso();
     saveTasks();
     render();
@@ -797,7 +832,10 @@ const SECTION_ORDER = ["No date", "Overdue", "Today", "Upcoming", "Completed"];
 
 function tasksInActiveList() {
   ensureActiveList();
-  if (isAllListsView()) return state.tasks.slice();
+  if (isAllListsView()) {
+    // Shopping cart tasks stay in their own list only
+    return state.tasks.filter((t) => !isShoppingCartTask(t));
+  }
   return state.tasks.filter((t) => (t.listId || DEFAULT_LIST_ID) === state.activeListId);
 }
 
@@ -848,7 +886,8 @@ function renderDrawerLists() {
   const allBtn = document.getElementById("nav-all-tasks");
   ensureActiveList();
   if (allBtn) {
-    allBtn.textContent = `All tasks (${state.tasks.length})`;
+    const allCount = state.tasks.filter((t) => !isShoppingCartTask(t)).length;
+    allBtn.textContent = `All tasks (${allCount})`;
     allBtn.classList.toggle("active", isAllListsView());
   }
   if (!host) return;
@@ -1103,7 +1142,11 @@ function renderCard(t, forceOverdueStyle) {
     subCount = `<span class="meta-subcount">${ICONS.subdone}${doneN}/${t.subtasks.length}</span>`;
   }
 
-  const swipeRightLabel = isCookbookTask(t) ? "+1 month" : "Set to now";
+  const swipeRightLabel = isCookbookTask(t)
+    ? "+1 month"
+    : isShoppingCartTask(t)
+      ? "+7 days"
+      : "Set to now";
   return `
     <div class="task-card-wrap" data-id="${t.id}">
       <div class="task-swipe-label swipe-now">${swipeRightLabel}</div>
