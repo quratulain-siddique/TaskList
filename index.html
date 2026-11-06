@@ -122,16 +122,22 @@
         </section>
 
         <section class="editor-section cookbook-only" id="section-ingredients" hidden>
-          <h3 class="editor-section-label">Ingredients</h3>
+          <div class="editor-section-head">
+            <h3 class="editor-section-label">Ingredients</h3>
+            <button type="button" class="btn-recipe-edit" id="btn-edit-ingredients" data-target="field-ingredients">Edit</button>
+          </div>
           <div class="recipe-field-wrap">
-            <textarea id="field-ingredients" rows="4" maxlength="4000" placeholder="List ingredients…"></textarea>
+            <textarea id="field-ingredients" rows="1" readonly placeholder="List ingredients…"></textarea>
           </div>
         </section>
 
         <section class="editor-section cookbook-only" id="section-method" hidden>
-          <h3 class="editor-section-label">Method</h3>
+          <div class="editor-section-head">
+            <h3 class="editor-section-label">Method</h3>
+            <button type="button" class="btn-recipe-edit" id="btn-edit-method" data-target="field-method">Edit</button>
+          </div>
           <div class="recipe-field-wrap">
-            <textarea id="field-method" rows="5" maxlength="8000" placeholder="Cooking steps…"></textarea>
+            <textarea id="field-method" rows="1" readonly placeholder="Cooking steps…"></textarea>
           </div>
         </section>
 

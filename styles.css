@@ -926,6 +926,33 @@ iframe[src*="netlify"],
   display: none !important;
 }
 
+.editor-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.editor-section-head .editor-section-label {
+  margin: 0;
+}
+
+.btn-recipe-edit {
+  border: 0;
+  background: transparent;
+  color: var(--yellow-dark);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 2px;
+}
+
+.btn-recipe-edit:active {
+  opacity: 0.7;
+}
+
 .recipe-field-wrap {
   border: 1px solid #e0e0e0;
   border-radius: 12px;
@@ -938,14 +965,27 @@ iframe[src*="netlify"],
   width: 100%;
   border: 0;
   outline: none;
-  resize: vertical;
+  resize: none;
+  overflow: hidden;
   font: inherit;
   font-size: 1.05rem;
   color: var(--text);
   padding: 0;
-  min-height: 4.5em;
+  min-height: 1.4em;
   line-height: 1.4;
   background: transparent;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.recipe-field-wrap textarea[readonly] {
+  color: var(--text);
+  cursor: default;
+  user-select: text;
+}
+
+.recipe-field-wrap textarea:not([readonly]) {
+  cursor: text;
 }
 
 .editor-section-label {

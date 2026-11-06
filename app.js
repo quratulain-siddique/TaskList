@@ -1019,6 +1019,38 @@ function updateEditorModeForList(listId) {
   if (subtasks) subtasks.hidden = cookbook;
   if (ingredients) ingredients.hidden = !cookbook;
   if (method) method.hidden = !cookbook;
+  if (cookbook) {
+    setRecipeFieldEditable("field-ingredients", false);
+    setRecipeFieldEditable("field-method", false);
+    requestAnimationFrame(() => {
+      autosizeRecipeField(document.getElementById("field-ingredients"));
+      autosizeRecipeField(document.getElementById("field-method"));
+    });
+  }
+}
+
+function autosizeRecipeField(el) {
+  if (!el) return;
+  el.style.height = "0px";
+  el.style.height = `${Math.max(el.scrollHeight, 28)}px`;
+}
+
+function setRecipeFieldEditable(fieldId, editable) {
+  const ta = /** @type {HTMLTextAreaElement|null} */ (document.getElementById(fieldId));
+  const btn = document.querySelector(`.btn-recipe-edit[data-target="${fieldId}"]`);
+  if (!ta) return;
+  ta.readOnly = !editable;
+  if (btn) btn.textContent = editable ? "Done" : "Edit";
+  if (editable) {
+    ta.focus();
+    const len = ta.value.length;
+    try {
+      ta.setSelectionRange(len, len);
+    } catch {
+      /* ignore */
+    }
+  }
+  autosizeRecipeField(ta);
 }
 
 /** @type {string | null} null = create, else rename that list id */
@@ -1384,6 +1416,8 @@ function openDialog(task) {
   document.getElementById("field-title").value = task?.title || "";
   document.getElementById("field-ingredients").value = task?.ingredients || "";
   document.getElementById("field-method").value = task?.method || "";
+  setRecipeFieldEditable("field-ingredients", false);
+  setRecipeFieldEditable("field-method", false);
   deleteBtn.hidden = !task;
   if (deleteSpacer) deleteSpacer.hidden = !!task;
 
@@ -1410,6 +1444,10 @@ function openDialog(task) {
   lockTaskEditorHeight();
   dlg.showModal();
   autosizeTitleField();
+  requestAnimationFrame(() => {
+    autosizeRecipeField(document.getElementById("field-ingredients"));
+    autosizeRecipeField(document.getElementById("field-method"));
+  });
   document.getElementById("field-title").focus();
 }
 
@@ -1739,6 +1777,20 @@ function bindEvents() {
     fitEditorListSelectWidth();
     const select = /** @type {HTMLSelectElement|null} */ (document.getElementById("field-list-id"));
     updateEditorModeForList(select?.value || "");
+  });
+  document.querySelectorAll(".btn-recipe-edit").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.getAttribute("data-target");
+      if (!targetId) return;
+      const ta = /** @type {HTMLTextAreaElement|null} */ (document.getElementById(targetId));
+      if (!ta) return;
+      setRecipeFieldEditable(targetId, ta.readOnly);
+    });
+  });
+  ["field-ingredients", "field-method"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", (e) => {
+      autosizeRecipeField(/** @type {HTMLTextAreaElement} */ (e.target));
+    });
   });
   document.getElementById("btn-add").addEventListener("click", () => openDialog(null));
   document.getElementById("btn-add-fab").addEventListener("click", () => openDialog(null));
