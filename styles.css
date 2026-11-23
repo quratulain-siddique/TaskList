@@ -211,7 +211,16 @@ body {
 }
 
 .task-card.shopping-cart {
-  background: #e9edc9;
+  background: #fff8e7;
+}
+
+.task-card.shopping-cart .defer-btn {
+  background: #fff8e7;
+  border-left-color: #ebe4d0;
+}
+
+.task-card.shopping-cart .defer-btn:active {
+  background: #f3ecd8;
 }
 
 .task-row {
