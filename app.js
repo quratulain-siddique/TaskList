@@ -481,8 +481,8 @@ async function pushLocalToFirebase() {
 }
 
 /**
- * Local is source of truth. On login / back online: keep local, backup to Firebase.
- * Never overwrite local from Firebase here.
+ * Local is source of truth when this device has tasks.
+ * Empty device exception: adopt Firebase data instead of wiping the cloud.
  */
 async function startCloudSync(user) {
   stopCloudSync();
@@ -490,9 +490,24 @@ async function startCloudSync(user) {
   render();
   setLoading(false);
 
-  // Backup local → Firebase in the background (no blocking overlay)
-  if (!navigator.onLine || !user) return;
+  if (!navigator.onLine || !user || !db) return;
   try {
+    if (state.tasks.length === 0) {
+      const snap = await getDoc(userDocRef(user.uid));
+      const cloudTasks =
+        snap.exists() && Array.isArray(snap.data()?.tasks)
+          ? snap.data().tasks.map(normalizeTask)
+          : [];
+      const cloudLists =
+        snap.exists() && Array.isArray(snap.data()?.lists)
+          ? snap.data().lists.map(normalizeList)
+          : [];
+      if (cloudTasks.length > 0) {
+        // New / empty device: seed from Firebase, do not push empty over cloud
+        applyFirebaseToLocal(cloudTasks, cloudLists);
+        return;
+      }
+    }
     await pushLocalToFirebase();
   } catch (e) {
     console.warn("Cloud backup unavailable, keeping local:", e);
@@ -833,7 +848,8 @@ const SECTION_ORDER = ["No date", "Overdue", "Today", "Upcoming", "Completed"];
 function tasksInActiveList() {
   ensureActiveList();
   if (isAllListsView()) {
-    // Shopping cart tasks stay in their own list only
+    // Shopping cart stays out of All tasks, but still matches search
+    if (state.query) return state.tasks.slice();
     return state.tasks.filter((t) => !isShoppingCartTask(t));
   }
   return state.tasks.filter((t) => (t.listId || DEFAULT_LIST_ID) === state.activeListId);
@@ -1179,11 +1195,12 @@ function renderCard(t, forceOverdueStyle) {
     : isShoppingCartTask(t)
       ? "+7 days"
       : "Set to now";
+  const shoppingClass = isShoppingCartTask(t) ? " shopping-cart" : "";
   return `
     <div class="task-card-wrap" data-id="${t.id}">
       <div class="task-swipe-label swipe-now">${swipeRightLabel}</div>
       <div class="task-swipe-label swipe-delete">Delete</div>
-      <article class="task-card" data-id="${t.id}">
+      <article class="task-card${shoppingClass}" data-id="${t.id}">
         <div class="task-row${t.done ? " done" : ""}">
           <button type="button" class="check${t.done ? " checked" : ""}" data-action="toggle" aria-label="Mark complete">
             ${t.done ? ICONS.checked : ICONS.empty}

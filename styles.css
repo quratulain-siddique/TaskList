@@ -210,6 +210,10 @@ body {
   will-change: transform;
 }
 
+.task-card.shopping-cart {
+  background: #e9edc9;
+}
+
 .task-row {
   display: flex;
   align-items: stretch;
